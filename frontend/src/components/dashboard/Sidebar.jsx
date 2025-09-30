@@ -6,14 +6,8 @@ import { Menu, Plus, LogOut, User, ChevronDown, X, PanelLeftOpen, PanelLeftClose
 import { useAuth } from "../../context/AuthContext";
 import NewOrder from "./NewOrder";
 import NewOrderFullScreen from "./NewOrderFullScreen";
-
-const sampleOrders = [
-  { id: "E150291", date: "21/08/2025 - 15:35 hrs", status: "Draft" },
-  { id: "E150292", date: "21/08/2025 - 15:35 hrs", status: "Pending" },
-  { id: "E150293", date: "21/08/2025 - 15:35 hrs", status: "Finished" },
-  { id: "E150294", date: "21/08/2025 - 15:35 hrs", status: "In progress" },
-  { id: "E150295", date: "21/08/2025 - 15:35 hrs", status: "Delivered" },
-];
+import ApiService from "../../services/ApiService";
+import PendingPage from "./pendingPage/PendingPage";
 
 const statusClasses = (status) => {
   switch (status?.toLowerCase()) {
@@ -24,9 +18,12 @@ const statusClasses = (status) => {
     case "finished":
       return "bg-emerald-100 text-emerald-800";
     case "in progress":
+    case "inprogress":
       return "bg-sky-100 text-sky-800";
     case "delivered":
       return "bg-indigo-100 text-indigo-800";
+    case "completed":
+      return "bg-green-100 text-green-800";
     default:
       return "bg-gray-100 text-gray-800";
   }
@@ -80,11 +77,6 @@ function OrderRow({ order, active, onOpen, isCollapsed }) {
 export default function Sidebar({ onNewOrder }) {
   const { user, logout: authLogout } = useAuth();
 
-  const currentUser = user || {
-    name: "John Doe",
-    email: "name@company.com"
-  };
-
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLogoHovered, setIsLogoHovered] = useState(false);
 
@@ -98,10 +90,75 @@ export default function Sidebar({ onNewOrder }) {
   const [detailsText, setDetailsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedNotes, setSavedNotes] = useState({});
+  const [panelMode, setPanelMode] = useState("readonly"); // "editor" or "readonly"
 
   const profileRef = useRef(null);
   const confirmRef = useRef(null);
   const panelRef = useRef(null);
+
+  const [orders, setOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [activeView, setActiveView] = useState("new"); // "new" | "pending"
+
+  const currentUser = user || { name: "User", email: "user@company.com" };
+
+  const formatDate = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    return `${dd}/${mm}/${yyyy} - ${hh}:${min} hrs`;
+  };
+
+  function handleOrderClick(order) {
+    // sirf "pending" orders pe fullscreen PendingPage
+    if ((order.status || "").toLowerCase() === "pending") {
+      setPanelOpen(false);
+      setPanelData(null);
+      setActiveView("pending");
+    } else {
+      // baaki statuses pe existing side panel
+      openDetails(order);
+    }
+  }
+
+
+  // Fetch orders from database
+  const fetchOrders = async () => {
+    setLoadingOrders(true);
+    try {
+      // Use ApiService instead of direct fetch
+      const data = await ApiService.getOrders();
+
+      const rows = (data || []).map((o) => ({
+        id: o.order_number || `ORD-${o.id}`,
+        date: formatDate(o.createdAt || o.updatedAt),
+        status: o.status || "Pending",
+        _dbId: o.id,
+        _fullData: o
+      }));
+
+      setOrders(rows);
+    } catch (err) {
+      console.error("Failed to fetch orders:", err);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
+  // Fetch orders on mount
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  // Handle when order is saved from form
+  function handleOrderSavedFromForm(info) {
+    // Refresh orders from database to get real data
+    fetchOrders();
+  }
 
   useEffect(() => {
     function onDocClick(e) {
@@ -157,9 +214,10 @@ export default function Sidebar({ onNewOrder }) {
   }, [isCollapsed]);
 
   const handleNewOrder = () => {
+    setActiveView("new");
     if (typeof onNewOrder === "function") return onNewOrder();
-    alert("New Order clicked!");
   };
+
 
   const toggleSidebar = () => {
     setIsCollapsed(!isCollapsed);
@@ -170,17 +228,21 @@ export default function Sidebar({ onNewOrder }) {
 
   function openDetails(order) {
     setPanelData(order);
-    setDetailsText(savedNotes[order.id] || "");
-    setPanelOpen(true);
+    if (order.status?.toLowerCase() === "pending") {
+      setPanelMode("editor");
+    } else {
+      setPanelMode("readonly")
+    }
+
+    setPanelOpen(true)
   }
 
-  async function handleSaveDetails() {
-    if (!panelData) return;
-    setSaving(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setSavedNotes((prev) => ({ ...prev, [panelData.id]: detailsText }));
-    setSaving(false);
-  }
+
+  const handleOpenPending = () => {
+    setActiveView("pending");
+  };
+
+
 
   const handleLogout = async () => {
     setProcessing(true);
@@ -219,7 +281,6 @@ export default function Sidebar({ onNewOrder }) {
               if (isCollapsed) setIsLogoHovered(false);
             }}
           >
-            {/* LOGO layer */}
             <div
               className={`absolute inset-0 transition-all duration-200 ease-out ${isCollapsed
                 ? isLogoHovered
@@ -239,7 +300,6 @@ export default function Sidebar({ onNewOrder }) {
               )}
             </div>
 
-            {/* TOGGLE overlay - appears only on hover when collapsed */}
             {isCollapsed && (
               <button
                 onClick={() => {
@@ -258,7 +318,6 @@ export default function Sidebar({ onNewOrder }) {
             )}
           </div>
 
-          {/* Toggle button when expanded */}
           {!isCollapsed && (
             <button
               onClick={toggleSidebar}
@@ -293,17 +352,27 @@ export default function Sidebar({ onNewOrder }) {
 
         {/* Orders list */}
         <div className="px-4 overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-          <div className="flex flex-col gap-2">
-            {sampleOrders.map((o, idx) => (
-              <OrderRow
-                key={o.id + idx}
-                order={o}
-                active={idx === 0}
-                onOpen={openDetails}
-                isCollapsed={isCollapsed}
-              />
-            ))}
-          </div>
+          {loadingOrders ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-sm text-gray-400">Loading orders...</div>
+            </div>
+          ) : orders.length === 0 ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-sm text-gray-400">No orders yet</div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {orders.map((o, idx) => (
+                <OrderRow
+                  key={o._dbId || o.id}
+                  order={o}
+                  active={false}
+                  onOpen={handleOrderClick}
+                  isCollapsed={isCollapsed}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Footer: profile + logout */}
@@ -430,7 +499,13 @@ export default function Sidebar({ onNewOrder }) {
         className={`${contentMargin} flex-1 h-screen overflow-y-auto transition-all duration-300 ease-in-out bg-gray-50`}
       >
         <div className="h-full">
-          <NewOrderFullScreen />
+          <div className="h-full">
+            {activeView === "pending" ? (
+              <PendingPage onBack={() => setActiveView("new")} />
+            ) : (
+              <NewOrderFullScreen onOrderSaved={handleOrderSavedFromForm} />
+            )}
+          </div>
         </div>
       </div>
     </div>

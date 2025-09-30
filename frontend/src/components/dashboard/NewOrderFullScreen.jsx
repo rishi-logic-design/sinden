@@ -8,6 +8,7 @@ import PricingSection from "./PriceSection";
 import ApiService from "../../services/ApiService";
 import useToast from "../../hooks/UseToast";
 import { validateOrderForm, sanitizeInput } from "../../utils/validation";
+import { useCallback } from "react";
 
 export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
   // Form state
@@ -41,10 +42,19 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
 
   // Set default date to today
   useEffect(() => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = new Date();
+
+    // auto set today's date
+    const date = today.toISOString().split("T")[0];
+
+    // auto set time = current time + 2 hours
+    const estimated = new Date(today.getTime() + 2 * 60 * 60 * 1000);
+    const time = estimated.toTimeString().slice(0, 5); // "HH:mm"
+
     setFormData((prev) => ({
       ...prev,
-      dateEstimated: today,
+      dateEstimated: date,
+      timeEstimated: time,
     }));
   }, []);
 
@@ -85,9 +95,9 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
   };
 
   // Handle pricing data changes (for future integration)
-  const handlePricingChange = (data) => {
+  const handlePricingChange = useCallback((data) => {
     setPricingData(data);
-  };
+  }, []);
 
   // Reset pricing data when form resets
   const resetPricingData = () => {
@@ -168,10 +178,12 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
 
     return {
       order_number: `ORD-${Date.now()}`,
-      customer_id: 2,
-      plant_id: 2,
+      customer_id: 1,
+      plant_id: 1,
       estimated_delivery_at: estimatedDelivery,
       total_amount: pricingData?.pricing?.total || 0,
+      // ALWAYS set to "Pending" when order is created (not draft)
+      status: isDraft ? undefined : "Pending",
       payment_status: isDraft ? "draft" : "None",
       meta: {
         clientName: sanitizeInput(formData.clientName),
@@ -231,7 +243,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
     setLoadingMessage("Submitting order...");
 
     try {
-      // Create order first
+      // Create order first - it will automatically be set to "Pending" status
       const payload = createOrderPayload(false);
       const result = await ApiService.createOrder(payload);
       const orderId = result.id;
@@ -280,14 +292,15 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
 
       // Success
       showSuccess(
-        `Order ${result.order_number || orderId} submitted successfully!`
+        `Order ${result.order_number || orderId} created successfully with Pending status!`
       );
 
-      // Notify parent component
+      // Notify parent component with status
       onOrderSaved({
         mode: "submitted",
         orderId: result.id,
         orderNumber: result.order_number || payload.order_number,
+        status: "Pending",
         payload,
       });
 
@@ -366,7 +379,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-4">
-                Client name 
+                Client name
               </label>
               <input
                 ref={clientNameRef}
@@ -374,8 +387,8 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
                 onChange={(e) => updateFormData("clientName", e.target.value)}
                 placeholder="Enter client name"
                 className={`block w-full h-12 rounded-md px-3 py-2 text-sm border ${errors.clientName
-                    ? "border-red-400 focus:border-red-500"
-                    : "border-gray-300 focus:border-blue-500"
+                  ? "border-red-400 focus:border-red-500"
+                  : "border-gray-300 focus:border-blue-500"
                   } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
                 disabled={isLoading}
               />
@@ -386,15 +399,15 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-4">
-                Contact (Phone/Gmail) 
+                Contact (Phone/Gmail)
               </label>
               <input
                 value={formData.contact}
                 onChange={(e) => updateFormData("contact", e.target.value)}
                 placeholder="10-digit phone or Gmail address"
                 className={`block w-full h-12 rounded-md px-3 py-2 text-sm border ${errors.contact
-                    ? "border-red-400 focus:border-red-500"
-                    : "border-gray-300 focus:border-blue-500"
+                  ? "border-red-400 focus:border-red-500"
+                  : "border-gray-300 focus:border-blue-500"
                   } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
                 disabled={isLoading}
               />
@@ -417,8 +430,8 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
                 value={formData.serviceType}
                 onChange={(e) => updateFormData("serviceType", e.target.value)}
                 className={`block w-full h-12 rounded-md px-3 py-2 text-sm border ${errors.serviceType
-                    ? "border-red-400 focus:border-red-500"
-                    : "border-gray-300 focus:border-blue-500"
+                  ? "border-red-400 focus:border-red-500"
+                  : "border-gray-300 focus:border-blue-500"
                   } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
                 disabled={isLoading}
               >
@@ -438,19 +451,16 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-4">
-                Estimated delivery date 
+                Estimated delivery date
               </label>
               <input
                 type="date"
                 value={formData.dateEstimated}
-                onChange={(e) =>
-                  updateFormData("dateEstimated", e.target.value)
-                }
+                readOnly
                 className={`block w-full h-12 rounded-md px-3 py-2 text-sm border ${errors.dateEstimated
-                    ? "border-red-400 focus:border-red-500"
-                    : "border-gray-300 focus:border-blue-500"
-                  } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
-                disabled={isLoading}
+                  ? "border-red-400"
+                  : "border-gray-300"
+                  } bg-gray-100 cursor-not-allowed`}
               />
               {errors.dateEstimated && (
                 <p className="text-xs text-red-600 mt-1">
@@ -461,19 +471,16 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-4">
-                Estimated delivery time 
+                Estimated delivery time
               </label>
               <input
                 type="time"
                 value={formData.timeEstimated}
-                onChange={(e) =>
-                  updateFormData("timeEstimated", e.target.value)
-                }
+                readOnly
                 className={`block w-full h-12 rounded-md px-3 py-2 text-sm border ${errors.timeEstimated
-                    ? "border-red-400 focus:border-red-500"
-                    : "border-gray-300 focus:border-blue-500"
-                  } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
-                disabled={isLoading}
+                  ? "border-red-400"
+                  : "border-gray-300"
+                  } bg-gray-100 cursor-not-allowed`}
               />
               {errors.timeEstimated && (
                 <p className="text-xs text-red-600 mt-1">
@@ -481,6 +488,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
                 </p>
               )}
             </div>
+
           </div>
 
           {/* Service Details */}
@@ -494,8 +502,8 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
               placeholder="Describe the service details"
               rows={2}
               className={`block w-full rounded-md px-3 py-2 text-sm border ${errors.serviceDetail
-                  ? "border-red-400 focus:border-red-500"
-                  : "border-gray-300 focus:border-blue-500"
+                ? "border-red-400 focus:border-red-500"
+                : "border-gray-300 focus:border-blue-500"
                 } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 resize-vertical`}
               disabled={isLoading}
             />
@@ -516,8 +524,8 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
               onChange={(e) => updateFormData("observations", e.target.value)}
               rows={3}
               className={`block w-full rounded-md px-3 py-2 text-sm border ${errors.observations
-                  ? "border-red-400 focus:border-red-500"
-                  : "border-gray-300 focus:border-blue-500"
+                ? "border-red-400 focus:border-red-500"
+                : "border-gray-300 focus:border-blue-500"
                 } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 resize-vertical`}
               placeholder="Additional observations or notes"
               disabled={isLoading}
@@ -572,7 +580,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
                     }`}
                 >
                   {isFormValid()
-                    ? "Ready to submit"
+                    ? "Ready to submit (will be created as Pending)"
                     : "Missing required fields"}
                 </span>
               </div>

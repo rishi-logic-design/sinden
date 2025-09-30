@@ -12,8 +12,8 @@ export default function FileUpload({
   files = [],
   onFilesChange,
   onPreview,
-  onError = () => {},
-  onSuccess = () => {},
+  onError = () => { },
+  onSuccess = () => { },
   disabled = false,
 }) {
   const [dragOver, setDragOver] = useState(false);
@@ -115,47 +115,11 @@ export default function FileUpload({
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-4">
-        Attachments 
+        Attachments
       </label>
 
-      {/* Drop zone */}
-      <div
-        onDrop={handleDrop}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        className={`rounded border-2 border-dashed p-4 transition-colors ${
-          dragOver ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-white"
-        } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
-      >
-        <div className="flex items-center gap-3 text-sm text-gray-500">
-          <CloudUpload className="w-5 h-5" />
-          <span>Drag & drop files here, or</span>
-          <label
-            className={`text-blue-600 underline ${
-              disabled ? "cursor-not-allowed" : "cursor-pointer"
-            }`}
-          >
-            <input
-              type="file"
-              multiple
-              className="hidden"
-              onChange={handleInputFiles}
-              disabled={disabled}
-              accept="image/jpeg,image/png,image/jpg,application/pdf"
-            />
-            + Add document
-          </label>
-        </div>
-        <div className="text-xs text-gray-400 mt-2">
-          JPEG, PNG, PDF up to 10MB
-        </div>
-      </div>
-
       {/* Files list */}
-      <div className="mt-4 space-y-3">
+      <div className="mt-6 mb-4 space-y-3">
         {files.length === 0 && (
           <div className="text-sm text-gray-500">
             No attachments (at least one required)
@@ -220,6 +184,42 @@ export default function FileUpload({
           </div>
         ))}
       </div>
+
+      {/* Drop zone */}
+      <div
+        onDrop={handleDrop}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        className={`rounded border-2 border-dashed p-4 transition-colors ${dragOver ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-white"
+          } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+      >
+        <div className="flex items-center gap-3 text-sm text-gray-500">
+          <CloudUpload className="w-5 h-5" />
+          <span>Drag & drop files here, or</span>
+          <label
+            className={`text-blue-600 underline ${disabled ? "cursor-not-allowed" : "cursor-pointer"
+              }`}
+          >
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              onChange={handleInputFiles}
+              disabled={disabled}
+              accept="image/jpeg,image/png,image/jpg,application/pdf"
+            />
+            + Add document
+          </label>
+        </div>
+        <div className="text-xs text-gray-400 mt-2">
+          JPEG, PNG, PDF up to 10MB
+        </div>
+      </div>
+
+
     </div>
   );
 }

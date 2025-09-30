@@ -228,24 +228,26 @@ export default function SignatureCanvas({
         />
       </div>
 
-      <div className="mt-3 flex items-center gap-3 flex-wrap">
+      <div className="mt-3 flex justify-end items-center gap-3 flex-wrap">
         <button
           type="button"
           onClick={clearSignature}
           disabled={!hasSignature || disabled}
-          className="px-3 py-2 border rounded text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="cursor-pointer px-10 py-4 border rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Clear
         </button>
+
         <button
           type="button"
           onClick={downloadSignature}
           disabled={!hasSignature || disabled}
-          className="px-3 py-2 border rounded text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="cursor-pointer px-10 py-4 rounded-md text-sm text-white bg-black hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Download
         </button>
       </div>
+
 
       {!hasSignature && (
         <p className="text-xs text-gray-500 mt-2">Draw your signature in the box above</p>

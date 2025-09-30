@@ -48,7 +48,7 @@ export default function PricingSection({
         deposit: totals.deposit,
       },
     });
-  }, [items, totals, onPricingChange]);
+  }, [items, totals]);
 
   // Update item
   const updateItem = (id, field, value) => {

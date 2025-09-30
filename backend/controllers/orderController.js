@@ -13,7 +13,7 @@ const {
 const fs = require("fs").promises;
 
 // CREATE
-(exports.create = async (req, res) => {
+exports.create = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const {
@@ -24,6 +24,7 @@ const fs = require("fs").promises;
       total_amount,
       payment_status,
       meta,
+      status,
     } = req.body;
 
     // Basic validation
@@ -62,7 +63,8 @@ const fs = require("fs").promises;
         .json({ error: `Plant with id ${plant_id} not found` });
     }
 
-    // Create order
+    // Create order with explicit status (default to "Pending" if not provided)
+    const orderStatus = status || "Pending";
     const order = await Order.create(
       {
         order_number,
@@ -71,7 +73,25 @@ const fs = require("fs").promises;
         estimated_delivery_at,
         total_amount: total_amount ?? 0,
         payment_status: payment_status ?? "None",
+        status: orderStatus,
         meta: meta ?? null,
+      },
+      { transaction: t }
+    );
+
+    // Create status history entry for initial status
+    await StatusHistory.create(
+      {
+        order_id: order.id,
+        from_status: null,
+        to_status: orderStatus,
+        changed_by: req.user?.id || null,
+        reason: "Order created",
+        metadata: {
+          source: "api",
+          created_at: new Date().toISOString(),
+          order_number: order_number
+        },
       },
       { transaction: t }
     );
@@ -99,29 +119,30 @@ const fs = require("fs").promises;
     }
     return res.status(500).json({ error: "Failed to create order" });
   }
-}),
-  (exports.list = async (req, res) => {
-    try {
-      const { status, customer_id, plant_id } = req.query;
-      const where = {};
-      if (status) where.status = status;
-      if (customer_id) where.customer_id = customer_id;
-      if (plant_id) where.plant_id = plant_id;
+};
 
-      const orders = await Order.findAll({
-        where,
-        include: [
-          { model: Customer, attributes: ["id", "name"] },
-          { model: Plant, attributes: ["id", "name", "code"] },
-        ],
-        order: [["createdAt", "DESC"]],
-      });
-      res.json(orders);
-    } catch (e) {
-      console.error("Order.list error:", e);
-      res.status(500).json({ error: "Failed to fetch orders" });
-    }
-  });
+exports.list = async (req, res) => {
+  try {
+    const { status, customer_id, plant_id } = req.query;
+    const where = {};
+    if (status) where.status = status;
+    if (customer_id) where.customer_id = customer_id;
+    if (plant_id) where.plant_id = plant_id;
+
+    const orders = await Order.findAll({
+      where,
+      include: [
+        { model: Customer, attributes: ["id", "name"] },
+        { model: Plant, attributes: ["id", "name", "code"] },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+    res.json(orders);
+  } catch (e) {
+    console.error("Order.list error:", e);
+    res.status(500).json({ error: "Failed to fetch orders" });
+  }
+};
 
 // GET BY ID
 exports.getById = async (req, res) => {
@@ -242,10 +263,17 @@ exports.changeStatus = async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const { to_status, reason } = req.body;
+
+    if (!to_status) {
+      await t.rollback();
+      return res.status(400).json({ error: "to_status is required" });
+    }
+
     const order = await Order.findByPk(req.params.id, {
       transaction: t,
       lock: t.LOCK.UPDATE,
     });
+
     if (!order) {
       await t.rollback();
       return res.status(404).json({ error: "Not found" });
@@ -255,14 +283,18 @@ exports.changeStatus = async (req, res) => {
     order.status = to_status;
     await order.save({ transaction: t });
 
+    // Create status history entry
     await StatusHistory.create(
       {
         order_id: order.id,
         from_status: from,
-        to_status,
+        to_status: to_status,
         changed_by: req.user?.id || null,
-        reason,
-        metadata: { source: "api" },
+        reason: reason || "Status changed",
+        metadata: {
+          source: "api",
+          changed_at: new Date().toISOString()
+        },
       },
       { transaction: t }
     );
@@ -343,26 +375,21 @@ exports.addAttachment = async (req, res) => {
   }
 };
 
-// SIGN ORDER
 // SIGN ORDER (accepts multipart file upload)
 exports.sign = async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    // If file upload flow used, req.file will exist
     const order = await Order.findByPk(req.params.id, { transaction: t });
     if (!order) {
-      // clean up uploaded file if any
-      if (req.file) await fs.unlink(req.file.path).catch(() => {});
+      if (req.file) await fs.unlink(req.file.path).catch(() => { });
       await t.rollback();
       return res.status(404).json({ error: "Order not found" });
     }
 
-    // Determine storage_key for the new signature
     let storageKey;
     if (req.file && req.file.path) {
-      storageKey = req.file.path; // local disk path; in prod replace with S3 key
+      storageKey = req.file.path;
     } else {
-      // fallback if client sends JSON with storage_key
       storageKey = req.body.storage_key || null;
     }
 
@@ -371,16 +398,14 @@ exports.sign = async (req, res) => {
       return res.status(400).json({ error: "No signature provided" });
     }
 
-    // Upsert signature: if existing, delete old file and update
     let signature = await Signature.findOne({
       where: { order_id: order.id },
       transaction: t,
     });
 
     if (signature) {
-      // delete old file from disk if exists and is different
       if (signature.storage_key && signature.storage_key !== storageKey) {
-        await fs.unlink(signature.storage_key).catch(() => {});
+        await fs.unlink(signature.storage_key).catch(() => { });
       }
       await signature.update(
         {
@@ -421,9 +446,8 @@ exports.sign = async (req, res) => {
     res.json(signature);
   } catch (e) {
     await t.rollback();
-    // cleanup uploaded file on error
     if (req.file) {
-      await fs.unlink(req.file.path).catch(() => {});
+      await fs.unlink(req.file.path).catch(() => { });
     }
     console.error("Order.sign error:", e);
     res.status(500).json({ error: "Failed to sign order" });
@@ -443,7 +467,6 @@ exports.deleteAttachment = async (req, res) => {
       return res.status(404).json({ error: "Attachment not found" });
     }
 
-    // remove file from disk
     if (attachment.storage_key) {
       await fs.unlink(attachment.storage_key).catch(console.error);
     }

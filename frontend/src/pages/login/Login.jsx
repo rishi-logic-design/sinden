@@ -79,7 +79,7 @@ const Login = ({ onSwitchToRegister }) => {
         password: formData.password,
       });
 
-      console.log("Login successful:", response);
+      // console.log("Login successful:", response);
 
       // Use the login function from AuthContext
       await login(response.token, null, response.user);
