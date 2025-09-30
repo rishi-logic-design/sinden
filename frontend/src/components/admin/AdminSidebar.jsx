@@ -9,8 +9,11 @@ import {
   FileText,
   BarChart3,
   Settings,
+  PanelLeftOpen,
+  PanelLeftClose,
 } from "lucide-react";
 import logoImage from "../../assets/img/dashboard/logo1.png";
+import { useAuth } from "../../context/AuthContext";
 
 import AdminOrders from "./AdminOrders";
 import ReportsPage from "./ReportsPage";
@@ -25,11 +28,18 @@ const LogoComponent = ({ className }) => (
 );
 
 export default function AdminSidebar({ onNewOrder }) {
-  const logout = () => console.log("Logout");
-  const user = { name: "John Doe", email: "name@company.com" };
+  const { user, logout: authLogout, isAuthenticated } = useAuth();
+
+  // Use user from AuthContext, fallback to default
+  const currentUser = user || {
+    name: "John Doe",
+    email: "name@company.com"
+  };
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeMenu, setActiveMenu] = useState("orders");
+  const [showToggleOnHover, setShowToggleOnHover] = useState(false);
+  const [isLogoHovered, setIsLogoHovered] = useState(false);
 
   const [showLogoutReveal, setShowLogoutReveal] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -46,6 +56,27 @@ export default function AdminSidebar({ onNewOrder }) {
     { id: "reports", label: "Reports", icon: BarChart3 },
     { id: "configuration", label: "Configuration", icon: Settings },
   ];
+
+  useEffect(() => {
+    const onKey = (e) => {
+      // Ignore if typing in input/textarea/select or with modifiers
+      const tag = e.target?.tagName?.toLowerCase();
+      if (
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey
+      )
+        return;
+      if (e.key.toLowerCase() === "k") {
+        setIsCollapsed((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     function onDocClick(e) {
@@ -102,8 +133,31 @@ export default function AdminSidebar({ onNewOrder }) {
     setActiveMenu(menuId);
   };
 
-  const sidebarWidth = isCollapsed ? "w-20" : "w-80";
-  const contentMargin = isCollapsed ? "ml-20" : "ml-80";
+  const toggleSidebar = () => {
+    setIsCollapsed(!isCollapsed);
+    if (isCollapsed) {
+      setShowToggleOnHover(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setProcessing(true);
+    setError("");
+
+    try {
+      await authLogout();
+      console.log("Logout successful");
+      // Redirect to login page
+      window.location.href = "/login";
+    } catch (e) {
+      console.error("Logout error:", e);
+      setError("Logout failed. Please try again.");
+      setProcessing(false);
+    }
+  };
+
+  const sidebarWidth = isCollapsed ? "w-16" : "w-80";
+  const contentMargin = isCollapsed ? "ml-16" : "ml-80";
 
   // Decide which page to render
   const renderContent = () => {
@@ -126,24 +180,68 @@ export default function AdminSidebar({ onNewOrder }) {
         data-sidebar="main"
         className={`${sidebarWidth} fixed left-0 top-0 h-full bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out z-40`}
       >
-        {/* Logo / top */}
-        <div className="flex items-center justify-between px-4 py-4 border-b border-gray-200">
+        {/* Logo / top with toggle */}
+        <div className="flex items-center justify-between px-4 py-4 border-b border-gray-200 relative">
           <div
-            className={`transition-all duration-300 ${
-              isCollapsed ? "w-10 h-10" : "w-12 h-12"
-            }`}
+            className={`transition-all cursor-pointer duration-300 relative ${isCollapsed ? "w-8 h-8" : "w-12 h-12"
+              }`}
+            onMouseEnter={() => {
+              if (isCollapsed) setIsLogoHovered(true);
+            }}
+            onMouseLeave={() => {
+              if (isCollapsed) setIsLogoHovered(false);
+            }}
           >
-            {/* Use actual logo if available, otherwise fallback */}
-            {logoImage ? (
-              <img
-                src={logoImage}
-                alt="logo"
-                className="w-full h-full object-contain"
-              />
-            ) : (
-              <LogoComponent className="w-full h-full" />
+            {/* LOGO layer */}
+            <div
+              className={`absolute inset-0 transition-all duration-200 ease-out ${isCollapsed
+                ? isLogoHovered
+                  ? "opacity-0 scale-95"
+                  : "opacity-100 scale-100"
+                : "opacity-100 scale-100"
+                }`}
+            >
+              {logoImage ? (
+                <img
+                  src={logoImage}
+                  alt="logo"
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <LogoComponent className="w-full cursor-pointer h-full" />
+              )}
+            </div>
+
+            {/* TOGGLE overlay - appears only on hover when collapsed */}
+            {isCollapsed && (
+              <button
+                onClick={() => {
+                  toggleSidebar();
+                  setIsLogoHovered(false);
+                }}
+                title="Open sidebar"
+                aria-label="Open sidebar"
+                className={`absolute cursor-pointer inset-0 m-0 flex items-center justify-center rounded-md border border-gray-200 bg-white shadow-sm transition-all duration-200 ease-out ${isLogoHovered
+                  ? "opacity-100 scale-100 pointer-events-auto"
+                  : "opacity-0 scale-95 pointer-events-none"
+                  }`}
+              >
+                <PanelLeftOpen className="w-4 h-4 text-gray-600" />
+              </button>
             )}
           </div>
+
+          {/* Toggle button when expanded */}
+          {!isCollapsed && (
+            <button
+              onClick={toggleSidebar}
+              className="p-2 rounded-md hover:bg-gray-100 cursor-pointer transition-colors duration-200"
+              title="Close sidebar"
+              aria-label="Close sidebar"
+            >
+              <PanelLeftClose className="w-5 h-5 text-gray-600" />
+            </button>
+          )}
         </div>
 
         {/* Menu */}
@@ -156,17 +254,15 @@ export default function AdminSidebar({ onNewOrder }) {
                 <button
                   key={item.id}
                   onClick={() => handleMenuClick(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                    isActive
-                      ? "bg-blue-50 text-blue-700 border-r-2 border-blue-600"
-                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  } ${isCollapsed ? "justify-center" : ""}`}
+                  className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${isActive
+                    ? "bg-blue-50 text-blue-700 border-r-2 border-blue-600"
+                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    } ${isCollapsed ? "justify-center" : ""}`}
                   title={isCollapsed ? item.label : ""}
                 >
                   <Icon
-                    className={`w-5 h-5 flex-shrink-0 ${
-                      isActive ? "text-blue-600" : "text-gray-500"
-                    }`}
+                    className={`w-5 h-5 flex-shrink-0 ${isActive ? "text-blue-600" : "text-gray-500"
+                      }`}
                   />
                   {!isCollapsed && (
                     <span className="truncate">{item.label}</span>
@@ -182,11 +278,10 @@ export default function AdminSidebar({ onNewOrder }) {
           <div className="relative" ref={profileRef}>
             {!isCollapsed && (
               <div
-                className={`overflow-hidden transition-all duration-200 ease-out ${
-                  showLogoutReveal
-                    ? "max-h-20 opacity-100 mb-3"
-                    : "max-h-0 opacity-0"
-                }`}
+                className={`overflow-hidden transition-all duration-200 ease-out ${showLogoutReveal
+                  ? "max-h-20 opacity-100 mb-3"
+                  : "max-h-0 opacity-0"
+                  }`}
               >
                 <button
                   onClick={() => setShowConfirm((v) => !v)}
@@ -208,10 +303,9 @@ export default function AdminSidebar({ onNewOrder }) {
                   }
                 }
               }}
-              className={`w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-all duration-300 ${
-                isCollapsed ? "justify-center" : ""
-              }`}
-              title={isCollapsed ? user.name : ""}
+              className={`w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-all duration-300 ${isCollapsed ? "justify-center" : ""
+                }`}
+              title={isCollapsed ? currentUser.name || currentUser.fullName : ""}
             >
               <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
                 <User className="w-5 h-5 text-gray-500" />
@@ -221,16 +315,15 @@ export default function AdminSidebar({ onNewOrder }) {
                 <>
                   <div className="flex-1 text-sm text-left min-w-0">
                     <div className="font-medium truncate text-gray-900">
-                      {user.name}
+                      {currentUser.name || currentUser.fullName || "User"}
                     </div>
                     <div className="text-xs text-gray-500 truncate">
-                      {user.email}
+                      {currentUser.email || "user@company.com"}
                     </div>
                   </div>
                   <ChevronDown
-                    className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${
-                      showLogoutReveal ? "rotate-180" : ""
-                    }`}
+                    className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${showLogoutReveal ? "rotate-180" : ""
+                      }`}
                   />
                 </>
               )}
@@ -259,22 +352,12 @@ export default function AdminSidebar({ onNewOrder }) {
                       setError("");
                     }}
                     disabled={processing}
-                    className="flex-1 px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="flex-1 px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={async () => {
-                      setProcessing(true);
-                      await new Promise((r) => setTimeout(r, 1000));
-                      try {
-                        await logout();
-                        window.location.href = "/login";
-                      } catch (e) {
-                        setError("Logout failed");
-                        setProcessing(false);
-                      }
-                    }}
+                    onClick={handleLogout}
                     disabled={processing}
                     className="flex items-center gap-2 px-4 py-2 rounded-md bg-red-600 text-white text-sm hover:bg-red-700 disabled:opacity-50 transition-colors"
                   >
@@ -296,15 +379,7 @@ export default function AdminSidebar({ onNewOrder }) {
       >
         <div className="h-full">
           <div className="p-6">
-            <button
-              onClick={() => setIsCollapsed(!isCollapsed)}
-              className="p-2 rounded-md hover:bg-gray-100 transition-colors mb-4"
-              title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              <Menu className="w-5 h-5 text-gray-600" />
-            </button>
-
-            {/* Render selected page */}
+            {/* Content rendered here */}
             {renderContent()}
           </div>
         </div>

@@ -9,7 +9,7 @@ import ApiService from "../../services/ApiService";
 import useToast from "../../hooks/UseToast";
 import { validateOrderForm, sanitizeInput } from "../../utils/validation";
 
-export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
+export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
   // Form state
   const [formData, setFormData] = useState({
     clientName: "",
@@ -61,7 +61,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
   const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const gmailRegex = /^[^\s@]+@gmail\.com$/;
-    
+
     if (!email) return "Email is required";
     if (!emailRegex.test(email)) return "Please enter a valid email address";
     if (!gmailRegex.test(email)) return "Please enter a valid Gmail address";
@@ -70,11 +70,11 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
 
   const validateContactField = (contact) => {
     if (!contact) return "Contact information is required";
-    
+
     // Check if it's a phone number (contains only digits, spaces, dashes, parentheses)
     const phonePattern = /^[\d\s\-\(\)]+$/;
     const emailPattern = /@/;
-    
+
     if (emailPattern.test(contact)) {
       return validateEmail(contact);
     } else if (phonePattern.test(contact)) {
@@ -162,8 +162,8 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
     const estimatedDelivery =
       formData.dateEstimated && formData.timeEstimated
         ? new Date(
-            `${formData.dateEstimated}T${formData.timeEstimated}`
-          ).toISOString()
+          `${formData.dateEstimated}T${formData.timeEstimated}`
+        ).toISOString()
         : new Date().toISOString();
 
     return {
@@ -330,7 +330,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
     });
     setFiles([]);
     setCurrentOrderId(null);
-    
+
     // Reset pricing section by using key prop
     setPricingKey(prev => prev + 1);
   };
@@ -359,29 +359,24 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
         <div className="max-w-[1200px] mx-auto">
           {/* Header */}
           <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900">New Order</h1>
-            <p className="text-gray-600 mt-2">
-              Create a new service order with client information, attachments,
-              and signature
-            </p>
+            <h1 className="text-4xl mb-10 font-bold text-gray-900">New Order</h1>
           </div>
 
           {/* Client & Contact */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Client name *
+              <label className="block text-sm font-medium text-gray-700 mb-4">
+                Client name 
               </label>
               <input
                 ref={clientNameRef}
                 value={formData.clientName}
                 onChange={(e) => updateFormData("clientName", e.target.value)}
                 placeholder="Enter client name"
-                className={`block w-full rounded-md px-3 py-2 text-sm border ${
-                  errors.clientName
+                className={`block w-full h-12 rounded-md px-3 py-2 text-sm border ${errors.clientName
                     ? "border-red-400 focus:border-red-500"
                     : "border-gray-300 focus:border-blue-500"
-                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
                 disabled={isLoading}
               />
               {errors.clientName && (
@@ -390,18 +385,17 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Contact (Phone/Gmail) *
+              <label className="block text-sm font-medium text-gray-700 mb-4">
+                Contact (Phone/Gmail) 
               </label>
               <input
                 value={formData.contact}
                 onChange={(e) => updateFormData("contact", e.target.value)}
                 placeholder="10-digit phone or Gmail address"
-                className={`block w-full rounded-md px-3 py-2 text-sm border ${
-                  errors.contact
+                className={`block w-full h-12 rounded-md px-3 py-2 text-sm border ${errors.contact
                     ? "border-red-400 focus:border-red-500"
                     : "border-gray-300 focus:border-blue-500"
-                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
                 disabled={isLoading}
               />
               {errors.contact && (
@@ -414,19 +408,18 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
           </div>
 
           {/* Service, Date, Time */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Service type *
+              <label className="block text-sm font-medium text-gray-700 mb-4">
+                Service type
               </label>
               <select
                 value={formData.serviceType}
                 onChange={(e) => updateFormData("serviceType", e.target.value)}
-                className={`block w-full rounded-md px-3 py-2 text-sm border ${
-                  errors.serviceType
+                className={`block w-full h-12 rounded-md px-3 py-2 text-sm border ${errors.serviceType
                     ? "border-red-400 focus:border-red-500"
                     : "border-gray-300 focus:border-blue-500"
-                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
                 disabled={isLoading}
               >
                 <option value="">Select service</option>
@@ -444,8 +437,8 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Estimated delivery date *
+              <label className="block text-sm font-medium text-gray-700 mb-4">
+                Estimated delivery date 
               </label>
               <input
                 type="date"
@@ -453,11 +446,10 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
                 onChange={(e) =>
                   updateFormData("dateEstimated", e.target.value)
                 }
-                className={`block w-full rounded-md px-3 py-2 text-sm border ${
-                  errors.dateEstimated
+                className={`block w-full h-12 rounded-md px-3 py-2 text-sm border ${errors.dateEstimated
                     ? "border-red-400 focus:border-red-500"
                     : "border-gray-300 focus:border-blue-500"
-                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
                 disabled={isLoading}
               />
               {errors.dateEstimated && (
@@ -468,8 +460,8 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Estimated delivery time *
+              <label className="block text-sm font-medium text-gray-700 mb-4">
+                Estimated delivery time 
               </label>
               <input
                 type="time"
@@ -477,11 +469,10 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
                 onChange={(e) =>
                   updateFormData("timeEstimated", e.target.value)
                 }
-                className={`block w-full rounded-md px-3 py-2 text-sm border ${
-                  errors.timeEstimated
+                className={`block w-full h-12 rounded-md px-3 py-2 text-sm border ${errors.timeEstimated
                     ? "border-red-400 focus:border-red-500"
                     : "border-gray-300 focus:border-blue-500"
-                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
                 disabled={isLoading}
               />
               {errors.timeEstimated && (
@@ -493,8 +484,8 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
           </div>
 
           {/* Service Details */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-4">
               Service details
             </label>
             <textarea
@@ -502,11 +493,10 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
               onChange={(e) => updateFormData("serviceDetail", e.target.value)}
               placeholder="Describe the service details"
               rows={2}
-              className={`block w-full rounded-md px-3 py-2 text-sm border ${
-                errors.serviceDetail
+              className={`block w-full rounded-md px-3 py-2 text-sm border ${errors.serviceDetail
                   ? "border-red-400 focus:border-red-500"
                   : "border-gray-300 focus:border-blue-500"
-              } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 resize-vertical`}
+                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 resize-vertical`}
               disabled={isLoading}
             />
             {errors.serviceDetail && (
@@ -518,18 +508,17 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
 
           {/* Observations */}
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-4">
               Observations
             </label>
             <textarea
               value={formData.observations}
               onChange={(e) => updateFormData("observations", e.target.value)}
               rows={3}
-              className={`block w-full rounded-md px-3 py-2 text-sm border ${
-                errors.observations
+              className={`block w-full rounded-md px-3 py-2 text-sm border ${errors.observations
                   ? "border-red-400 focus:border-red-500"
                   : "border-gray-300 focus:border-blue-500"
-              } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 resize-vertical`}
+                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 resize-vertical`}
               placeholder="Additional observations or notes"
               disabled={isLoading}
             />
@@ -555,7 +544,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
 
           {/* Pricing Section */}
           <div className="mb-6">
-            <PricingSection 
+            <PricingSection
               key={pricingKey}
               onPricingChange={handlePricingChange}
               disabled={isLoading}
@@ -579,9 +568,8 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
               <div className="text-sm">
                 <span className="font-medium text-gray-700">Form Status: </span>
                 <span
-                  className={`${
-                    isFormValid() ? "text-green-600" : "text-orange-600"
-                  }`}
+                  className={`${isFormValid() ? "text-green-600" : "text-orange-600"
+                    }`}
                 >
                   {isFormValid()
                     ? "Ready to submit"
@@ -591,17 +579,16 @@ export default function NewOrderFullScreen({ onOrderSaved = () => {} }) {
               <div className="text-xs text-gray-500">
                 {isFormValid()
                   ? "✓ All requirements met"
-                  : `${
-                      6 -
-                      [
-                        formData.clientName.trim(),
-                        !validateContactField(formData.contact),
-                        formData.serviceType,
-                        formData.dateEstimated,
-                        formData.timeEstimated,
-                        files.length > 0 && signature,
-                      ].filter(Boolean).length
-                    } items remaining`}
+                  : `${6 -
+                  [
+                    formData.clientName.trim(),
+                    !validateContactField(formData.contact),
+                    formData.serviceType,
+                    formData.dateEstimated,
+                    formData.timeEstimated,
+                    files.length > 0 && signature,
+                  ].filter(Boolean).length
+                  } items remaining`}
               </div>
             </div>
             {!isFormValid() && (

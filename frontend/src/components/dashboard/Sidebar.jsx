@@ -1,10 +1,9 @@
-// src/components/Sidebar.jsx
 "use client";
 import logoImage from "../../assets/img/dashboard/logo1.png";
 
 import React, { useRef, useState, useEffect } from "react";
-import { Menu, Plus, LogOut, User, ChevronDown, X } from "lucide-react";
-import { useAuth } from "../../context/AuthContext"; // keep your path
+import { Menu, Plus, LogOut, User, ChevronDown, X, PanelLeftOpen, PanelLeftClose } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
 import NewOrder from "./NewOrder";
 import NewOrderFullScreen from "./NewOrderFullScreen";
 
@@ -33,23 +32,28 @@ const statusClasses = (status) => {
   }
 };
 
-/** Clickable Order row: calls onOpen(order) when clicked */
+const LogoComponent = ({ className }) => (
+  <div
+    className={`bg-green-500 rounded-lg flex items-center justify-center ${className}`}
+  >
+    <span className="text-white font-bold text-xl">S</span>
+  </div>
+);
+
 function OrderRow({ order, active, onOpen, isCollapsed }) {
   return (
     <button
       onClick={() => onOpen && onOpen(order)}
-      className={`w-full text-left flex items-start gap-3 p-3 rounded-lg transition-colors ${
-        active ? "bg-gray-100" : "hover:bg-slate-50"
-      }`}
+      className={`w-full text-left flex items-start gap-3 p-3 rounded-lg transition-colors ${active ? "bg-gray-100" : "hover:bg-slate-50"
+        }`}
       type="button"
       title={isCollapsed ? `${order.id} - ${order.status}` : ""}
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <div
-            className={`text-sm font-medium truncate ${
-              isCollapsed ? "text-center w-full" : ""
-            }`}
+            className={`text-sm font-medium truncate ${isCollapsed ? "text-center w-full" : ""
+              }`}
           >
             {isCollapsed ? order.id.slice(-4) : order.id}
           </div>
@@ -73,32 +77,27 @@ function OrderRow({ order, active, onOpen, isCollapsed }) {
   );
 }
 
-/**
- * Sidebar + Right Details Panel (slide-in)
- *
- * - Click an order to open the panel on the right of the sidebar
- * - Panel contains a simple "Add details" form (demo local save)
- */
 export default function Sidebar({ onNewOrder }) {
-  const { logout } = useAuth();
-  // router logic omitted for brevity – keep your redirect logic if needed
-  const user = { name: "John Doe", email: "name@company.com" };
+  const { user, logout: authLogout } = useAuth();
 
-  // Sidebar collapse state
+  const currentUser = user || {
+    name: "John Doe",
+    email: "name@company.com"
+  };
+
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isLogoHovered, setIsLogoHovered] = useState(false);
 
-  // states for logout reveal / confirm (kept minimal here)
   const [showLogoutReveal, setShowLogoutReveal] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
 
-  // NEW: details panel state
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelData, setPanelData] = useState(null); // selected order or null
+  const [panelData, setPanelData] = useState(null);
   const [detailsText, setDetailsText] = useState("");
   const [saving, setSaving] = useState(false);
-  const [savedNotes, setSavedNotes] = useState({}); // store saved details keyed by order.id
+  const [savedNotes, setSavedNotes] = useState({});
 
   const profileRef = useRef(null);
   const confirmRef = useRef(null);
@@ -116,14 +115,11 @@ export default function Sidebar({ onNewOrder }) {
         setShowConfirm(false);
         setError("");
       }
-      // close panel if click outside the panel and outside sidebar (optional)
       if (
         panelOpen &&
         panelRef.current &&
         !panelRef.current.contains(e.target)
       ) {
-        // don't auto-close if click inside sidebar; only close if click far away
-        // here we choose: close only when clicking outside both sidebar and panel
         const sidebarNode = document.querySelector(
           'aside[data-sidebar="main"]'
         );
@@ -152,7 +148,6 @@ export default function Sidebar({ onNewOrder }) {
     };
   }, [panelOpen]);
 
-  // Close logout reveal when sidebar collapses
   useEffect(() => {
     if (isCollapsed) {
       setShowLogoutReveal(false);
@@ -166,57 +161,122 @@ export default function Sidebar({ onNewOrder }) {
     alert("New Order clicked!");
   };
 
-  // when an order is clicked – open panel and load saved notes if any
+  const toggleSidebar = () => {
+    setIsCollapsed(!isCollapsed);
+    if (isCollapsed) {
+      setIsLogoHovered(false);
+    }
+  };
+
   function openDetails(order) {
     setPanelData(order);
     setDetailsText(savedNotes[order.id] || "");
     setPanelOpen(true);
   }
 
-  // demo save (you'll replace with API call)
   async function handleSaveDetails() {
     if (!panelData) return;
     setSaving(true);
-    // simulate save latency
     await new Promise((r) => setTimeout(r, 800));
     setSavedNotes((prev) => ({ ...prev, [panelData.id]: detailsText }));
     setSaving(false);
-    // optionally give user feedback
-    // keep panel open
   }
 
-  const sidebarWidth = isCollapsed ? "w-20" : "w-80";
-  const contentMargin = isCollapsed ? "ml-20" : "ml-80";
+  const handleLogout = async () => {
+    setProcessing(true);
+    setError("");
+
+    try {
+      await authLogout();
+      console.log("Logout successful");
+      window.location.href = "/login";
+    } catch (e) {
+      console.error("Logout error:", e);
+      setError("Logout failed. Please try again.");
+      setProcessing(false);
+    }
+  };
+
+  const sidebarWidth = isCollapsed ? "w-16" : "w-80";
+  const contentMargin = isCollapsed ? "ml-16" : "ml-80";
 
   return (
     <div className="flex h-screen">
-      {/* Sidebar itself */}
+      {/* Sidebar */}
       <aside
         data-sidebar="main"
         className={`${sidebarWidth} fixed left-0 top-0 h-full bg-white border-r border-gray-100 flex flex-col transition-all duration-300 ease-in-out z-40`}
       >
-        {/* Top */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        {/* Logo / top with toggle */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 relative">
           <div
-            className={`transition-all duration-300 ${
-              isCollapsed ? "w-12 h-12" : "w-16 h-16"
-            }`}
+            className={`transition-all cursor-pointer duration-300 relative ${isCollapsed ? "w-8 h-8" : "w-16 h-16"
+              }`}
+            onMouseEnter={() => {
+              if (isCollapsed) setIsLogoHovered(true);
+            }}
+            onMouseLeave={() => {
+              if (isCollapsed) setIsLogoHovered(false);
+            }}
           >
-            <img
-              src={logoImage}
-              alt="logo"
-              className="w-full h-full object-contain"
-            />
+            {/* LOGO layer */}
+            <div
+              className={`absolute inset-0 transition-all duration-200 ease-out ${isCollapsed
+                ? isLogoHovered
+                  ? "opacity-0 scale-95"
+                  : "opacity-100 scale-100"
+                : "opacity-100 scale-100"
+                }`}
+            >
+              {logoImage ? (
+                <img
+                  src={logoImage}
+                  alt="logo"
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <LogoComponent className="w-full cursor-pointer h-full" />
+              )}
+            </div>
+
+            {/* TOGGLE overlay - appears only on hover when collapsed */}
+            {isCollapsed && (
+              <button
+                onClick={() => {
+                  toggleSidebar();
+                  setIsLogoHovered(false);
+                }}
+                title="Open sidebar"
+                aria-label="Open sidebar"
+                className={`absolute cursor-pointer inset-0 m-0 flex items-center justify-center rounded-md border border-gray-200 bg-white shadow-sm transition-all duration-200 ease-out ${isLogoHovered
+                  ? "opacity-100 scale-100 pointer-events-auto"
+                  : "opacity-0 scale-95 pointer-events-none"
+                  }`}
+              >
+                <PanelLeftOpen className="w-4 h-4 text-gray-600" />
+              </button>
+            )}
           </div>
+
+          {/* Toggle button when expanded */}
+          {!isCollapsed && (
+            <button
+              onClick={toggleSidebar}
+              className="p-2 rounded-md hover:bg-gray-100 cursor-pointer transition-colors duration-200"
+              title="Close sidebar"
+              aria-label="Close sidebar"
+            >
+              <PanelLeftClose className="w-5 h-5 text-gray-600" />
+            </button>
+          )}
         </div>
 
         {/* New Order */}
         <div className="px-4 py-3">
           <button
             onClick={handleNewOrder}
-            className={`w-full flex items-center justify-center gap-2 bg-black text-white rounded-lg py-3 shadow-sm hover:opacity-95 cursor-pointer transition-all duration-300 ${
-              isCollapsed ? "px-2" : "px-4"
-            }`}
+            className={`w-full flex items-center justify-center gap-2 bg-black text-white rounded-lg py-3 shadow-sm hover:opacity-95 cursor-pointer transition-all duration-300 ${isCollapsed ? "px-2" : "px-4"
+              }`}
             title={isCollapsed ? "New Order" : ""}
           >
             <Plus className="w-4 h-4 flex-shrink-0" />
@@ -246,20 +306,19 @@ export default function Sidebar({ onNewOrder }) {
           </div>
         </div>
 
-        {/* Footer (profile + logout reveal) */}
+        {/* Footer: profile + logout */}
         <div className="px-4 py-4 border-t border-gray-100">
           <div className="relative" ref={profileRef}>
             {!isCollapsed && (
               <div
-                className={`overflow-hidden transition-all duration-200 ease-out ${
-                  showLogoutReveal
-                    ? "max-h-20 opacity-100 mb-3"
-                    : "max-h-0 opacity-0"
-                }`}
+                className={`overflow-hidden transition-all duration-200 ease-out ${showLogoutReveal
+                  ? "max-h-20 opacity-100 mb-3"
+                  : "max-h-0 opacity-0"
+                  }`}
               >
                 <button
                   onClick={() => setShowConfirm((v) => !v)}
-                  className="w-full bg-white border border-red-100 text-red-500 rounded-lg py-3 flex items-center gap-2 justify-center shadow-sm cursor-pointer"
+                  className="w-full bg-white border border-red-100 text-red-500 rounded-lg py-3 flex items-center gap-2 justify-center shadow-sm cursor-pointer hover:bg-red-50 transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
                   <span className="font-medium">Log out</span>
@@ -277,10 +336,9 @@ export default function Sidebar({ onNewOrder }) {
                   }
                 }
               }}
-              className={`w-full flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 cursor-pointer transition-all duration-300 ${
-                isCollapsed ? "justify-center" : ""
-              }`}
-              title={isCollapsed ? user.name : ""}
+              className={`w-full flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 cursor-pointer transition-all duration-300 ${isCollapsed ? "justify-center" : ""
+                }`}
+              title={isCollapsed ? currentUser.name || currentUser.fullName : ""}
             >
               <div className="w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0">
                 <User className="w-5 h-5 text-gray-400" />
@@ -288,21 +346,21 @@ export default function Sidebar({ onNewOrder }) {
               {!isCollapsed && (
                 <>
                   <div className="flex-1 text-sm text-left min-w-0">
-                    <div className="font-medium truncate">{user.name}</div>
+                    <div className="font-medium truncate">
+                      {currentUser.name || currentUser.fullName || "User"}
+                    </div>
                     <div className="text-xs text-gray-500 truncate">
-                      {user.email}
+                      {currentUser.email || "user@company.com"}
                     </div>
                   </div>
                   <ChevronDown
-                    className={`w-4 h-4 text-gray-500 transition-transform flex-shrink-0 ${
-                      showLogoutReveal ? "rotate-180" : ""
-                    }`}
+                    className={`w-4 h-4 text-gray-500 transition-transform flex-shrink-0 ${showLogoutReveal ? "rotate-180" : ""
+                      }`}
                   />
                 </>
               )}
             </button>
 
-            {/* confirm box kept minimal */}
             {showConfirm && !isCollapsed && (
               <div
                 ref={confirmRef}
@@ -324,22 +382,12 @@ export default function Sidebar({ onNewOrder }) {
                       setError("");
                     }}
                     disabled={processing}
-                    className="flex-1 px-3 py-2 rounded-md text-sm hover:bg-gray-50 cursor-pointer"
+                    className="flex-1 px-3 py-2 rounded-md text-sm hover:bg-gray-50 cursor-pointer disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={async () => {
-                      setProcessing(true);
-                      await new Promise((r) => setTimeout(r, 3000));
-                      try {
-                        await logout();
-                        window.location.href = "/login";
-                      } catch (e) {
-                        setError("Logout failed");
-                        setProcessing(false);
-                      }
-                    }}
+                    onClick={handleLogout}
                     disabled={processing}
                     className="flex items-center gap-2 px-3 py-2 rounded-md bg-red-600 text-white text-sm hover:opacity-90 disabled:opacity-50 cursor-pointer"
                   >
@@ -377,18 +425,11 @@ export default function Sidebar({ onNewOrder }) {
         </div>
       </aside>
 
-      {/* ===== Right-side Content Area (scrollable) ===== */}
+      {/* Content Area */}
       <div
         className={`${contentMargin} flex-1 h-screen overflow-y-auto transition-all duration-300 ease-in-out bg-gray-50`}
       >
         <div className="h-full">
-          <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="p-2 mt-10 w-5 rounded-md hover:bg-gray-100 cursor-pointer transition-colors"
-            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            <Menu className="w-5 h-5" />
-          </button>
           <NewOrderFullScreen />
         </div>
       </div>

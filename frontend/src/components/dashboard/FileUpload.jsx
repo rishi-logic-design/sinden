@@ -114,8 +114,8 @@ export default function FileUpload({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">
-        Attachments *
+      <label className="block text-sm font-medium text-gray-700 mb-4">
+        Attachments 
       </label>
 
       {/* Drop zone */}

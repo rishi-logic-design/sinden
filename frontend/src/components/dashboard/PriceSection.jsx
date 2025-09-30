@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 
 export default function PricingSection({
-  onPricingChange = () => {},
+  onPricingChange = () => { },
   disabled = false,
   initialItems = [
     { id: 1, description: "", quantity: 0, unitPrice: 0, total: 0 },
@@ -134,7 +134,7 @@ export default function PricingSection({
                     onChange={(e) =>
                       updateItem(item.id, "description", e.target.value)
                     }
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full h-12 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                     disabled={disabled}
                   >
                     <option value="">Select description</option>
@@ -157,7 +157,7 @@ export default function PricingSection({
                         parseFloat(e.target.value) || 0
                       )
                     }
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full h-12 px-2 py-1 border border-gray-300 rounded text-sm text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
                     min="0"
                     step="0.01"
                     disabled={disabled}
@@ -174,7 +174,7 @@ export default function PricingSection({
                         parseFloat(e.target.value) || 0
                       )
                     }
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full h-12 px-2 py-1 border border-gray-300 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
                     min="0"
                     step="0.01"
                     placeholder="0.00"
@@ -187,7 +187,7 @@ export default function PricingSection({
                       type="text"
                       value={item.total.toFixed(2)}
                       readOnly
-                      className="w-16 px-2 py-1 border border-gray-300 rounded text-sm text-right bg-gray-50"
+                      className="w-16 h-12 px-2 py-1 border border-gray-300 rounded text-sm text-right bg-gray-50"
                     />
                     {items.length > 1 && (
                       <button
@@ -216,56 +216,91 @@ export default function PricingSection({
         </table>
       </div>
 
-      <button
-        onClick={addItem}
-        className="mt-3 text-blue-600 hover:text-blue-700 text-sm font-medium"
-        disabled={disabled}
-      >
-        + Add Item
-      </button>
+      <div className="relative">
+        <button
+          onClick={addItem}
+          className="absolute right-6 top-3 text-blue-600 hover:text-blue-700 text-sm font-medium"
+          disabled={disabled}
+        >
+          + Add Item
+        </button>
+      </div>
+
 
       {/* Totals Section */}
       <div className="mt-6">
         <div className="flex justify-end">
-          <div className="w-64 space-y-2">
-            <div className="flex justify-between py-2">
-              <span className="text-sm font-medium text-gray-700">
-                SUBTOTAL
-              </span>
-              <span className="text-sm font-medium text-gray-900">
-                ${totals.subtotal.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between py-2">
-              <span className="text-sm font-medium text-gray-700">
-                IVA (16%)
-              </span>
-              <span className="text-sm font-medium text-gray-900">
-                ${totals.iva.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between py-2 border-t border-gray-200">
-              <span className="text-sm font-bold text-gray-900">TOTAL</span>
-              <span className="text-sm font-bold text-gray-900">
-                ${totals.total.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between py-2 border-t border-gray-200">
-              <span className="text-sm font-medium text-gray-700">DEPOSIT</span>
-              <input
-                type="number"
-                value={totals.deposit}
-                onChange={(e) => updateDeposit(e.target.value)}
-                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                disabled={disabled}
-              />
+          <div className="w-64">
+            {/* thin divider */}
+            <div className="my-3 h-px bg-gray-200" />
+
+            <div className="space-y-4">
+              {/* SUB TOTAL */}
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-semibold tracking-wide text-gray-700">
+                  SUB TOTAL
+                </span>
+                <input
+                  type="text"
+                  readOnly
+                  value={Number(totals.subtotal || 0).toFixed(2)}
+                  placeholder="000.00"
+                  className="h-10 w-32 rounded-lg border border-gray-200 bg-white px-3 text-sm text-right text-gray-600 outline-none"
+                />
+              </div>
+
+              {/* IVA (%) */}
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-semibold tracking-wide text-gray-700">
+                  IVA (%)
+                </span>
+                <input
+                  type="text"
+                  readOnly
+                  value={Number(totals.iva || 0).toFixed(2)}
+                  placeholder="000.00"
+                  className="h-10 w-32 rounded-lg border border-gray-200 bg-white px-3 text-sm text-right text-gray-600 outline-none"
+                />
+              </div>
+
+              {/* TOTAL */}
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-semibold tracking-wide text-gray-900">
+                  TOTAL
+                </span>
+                <input
+                  type="text"
+                  readOnly
+                  value={Number(totals.total || 0).toFixed(2)}
+                  placeholder="000.00"
+                  className="h-10 w-32 rounded-lg border border-gray-200 bg-white px-3 text-sm text-right text-gray-700 outline-none font-medium"
+                />
+              </div>
+
+              {/* divider before ABONO */}
+              <div className="h-px bg-gray-200" />
+
+              {/* ABONO */}
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-semibold tracking-wide text-gray-700">
+                  ABONO
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="000.00"
+                  value={totals.deposit ?? ""}
+                  onChange={(e) => updateDeposit(e.target.value)}
+                  disabled={!!disabled}
+                  className="h-10 w-32 rounded-lg border border-gray-200 bg-white px-3 text-sm text-right text-gray-700 outline-none"
+                />
+              </div>
             </div>
           </div>
         </div>
       </div>
+
     </div>
   );
 }
