@@ -212,9 +212,9 @@ export default function PendingSignatureCanva({
 
     return (
         <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-                Client signature *
-            </label>
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+                Signature
+            </h3>
 
             <div className={`border rounded bg-gray-50 overflow-hidden ${disabled ? "opacity-50" : ""}`}>
                 <canvas

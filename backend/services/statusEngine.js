@@ -41,8 +41,8 @@ function canTransition(role = "Admin", from, to) {
 }
 
 function allowedNextStates(role = "Admin", from) {
-  const roleRules = TRANSITIONS[role] || {};
-  return roleRules[from] || [];
+  const roleRules = TRANSITIONS[role] || {}; 
+  return roleRules[from] || []; 
 }
 
 module.exports = {

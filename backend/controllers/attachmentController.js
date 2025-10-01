@@ -171,14 +171,10 @@ exports.download = async (req, res) => {
     }
 
     // Set appropriate headers
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${attachment.original_name}"`
-    );
-    res.setHeader(
-      "Content-Type",
-      attachment.mime_type || "application/octet-stream"
-    );
+    const dispositionType = req.query.inline === '1' ? 'inline' : 'attaachment';
+    res.setHeader('Content-Disposition', `${dispositionType}; filename="${attachment.original_name || 'file'}"`);
+    res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
+
 
     // Send file
     res.sendFile(path.resolve(filePath));

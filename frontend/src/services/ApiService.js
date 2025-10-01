@@ -282,6 +282,22 @@ class ApiService {
       credentials: "include",
     });
   }
+  // Fetch attachments list for an order
+  async getAttachments(orderId) {
+    if (!orderId) throw new Error("orderId required");
+    return this.request(`/orders/${orderId}/attachments`, {
+      credentials: "include",
+    });
+  }
+
+  // Fetch signature by order (controller route: /api/signatures/order/:orderId)
+  async getSignatureByOrder(orderId) {
+    if (!orderId) throw new Error("orderId required");
+    return this.request(`/signatures/order/${orderId}`, {
+      credentials: "include",
+    });
+  }
+
 }
 
 export default new ApiService();

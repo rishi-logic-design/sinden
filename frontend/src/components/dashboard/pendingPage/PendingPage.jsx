@@ -1,157 +1,209 @@
-import React, { useState, useEffect } from "react";
-import { X, Download, Eye, FileText, Calendar, User, Phone, Mail, Package, ChevronLeft } from "lucide-react";
+// PendingPage.jsx
+import React, { useState, useEffect, useRef } from "react";
+import { X, Download, Eye, FileText, ArrowLeft, Package, User, Calendar, DollarSign } from "lucide-react";
 
-export default function PendingOrderViewer({ orderId, onClose }) {
-    const [order, setOrder] = useState(null);
-    const [attachments, setAttachments] = useState([]);
-    const [signature, setSignature] = useState(null);
+/**
+ * PendingPage.jsx
+ * - Fetches orders list
+ * - On click: fetches order details (GET /api/orders/:id)
+ * - Additionally always fetches attachments list (GET /api/attachments/order/:orderId)
+ *   and signature object (GET /api/signatures/order/:orderId) to ensure we show them.
+ * - Signature is drawn into a <canvas> for display. If draw fails, we show a fallback image / download link.
+ *
+ * NOTE: Adjust BASE_API if your server base differs.
+ */
+const BASE_API = "http://localhost:5001/api";
+
+function OrderCard({ order, onClick }) {
+    const formatDate = (iso) => {
+        if (!iso) return "N/A";
+        const d = new Date(iso);
+        return d.toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+        });
+    };
+
+    const meta = order.meta || {};
+
+    return (
+        <button
+            onClick={() => onClick(order)}
+            className="w-full text-left bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-gray-300 transition-all cursor-pointer"
+        >
+            <div className="flex items-start justify-between mb-3">
+                <div>
+                    <h3 className="font-semibold text-gray-900">Order #{order.order_number}</h3>
+                    <p className="text-sm text-gray-500 mt-1">{formatDate(order.createdAt)}</p>
+                </div>
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    {order.status}
+                </span>
+            </div>
+
+            <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                    <User className="w-4 h-4 text-gray-400" />
+                    <span className="text-gray-700">{meta.clientName || "N/A"}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                    <Package className="w-4 h-4 text-gray-400" />
+                    <span className="text-gray-700 capitalize">{meta.serviceType || "N/A"}</span>
+                </div>
+                {order.total_amount > 0 && (
+                    <div className="flex items-center gap-2 text-sm">
+                        <DollarSign className="w-4 h-4 text-gray-400" />
+                        <span className="text-gray-700 font-medium">${Number(order.total_amount).toFixed(2)}</span>
+                    </div>
+                )}
+            </div>
+        </button>
+    );
+}
+
+export default function PendingOrdersPage({ onBack }) {
+    const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+    const [selectedOrder, setSelectedOrder] = useState(null);
+    const [orderDetails, setOrderDetails] = useState(null);
+    const [loadingDetails, setLoadingDetails] = useState(false);
     const [previewModal, setPreviewModal] = useState(null);
 
+    // attachments + signature state (always fetched separately to guarantee display)
+    const [attachments, setAttachments] = useState([]);
+    const [signatureObj, setSignatureObj] = useState(null); // signature DB row
+    const [signatureUrl, setSignatureUrl] = useState(null); // URL to download/inline
+    const signatureCanvasRef = useRef(null);
+
     useEffect(() => {
-        if (!orderId) return;
-        fetchOrderDetails();
-    }, [orderId]);
+        fetchPendingOrders();
+    }, []);
 
-    // Replace your fetchAttachments/signature logic with this function in PendingPage.jsx
-    const safeParseJson = async (res) => {
-        try {
-            return await res.json();
-        } catch (e) {
-            console.error('Failed to parse JSON', e);
-            return null;
-        }
-    };
-
-    const toArray = (value) => {
-        if (!value) return [];
-        if (Array.isArray(value)) return value;
-        if (typeof value === 'object') {
-            // try common wrapper shapes
-            if (Array.isArray(value.data)) return value.data;
-            if (Array.isArray(value.items)) return value.items;
-            // single object -> array
-            return [value];
-        }
-        return [];
-    };
-
-    const isFileKind = (att) => {
-        const k = (att.kind || att.type || '').toString().toLowerCase();
-        return k === 'file' || k === 'attachment' || k === 'image' || k === 'document';
-    };
-
-    const buildFileUrl = (storageKey) => {
-        if (!storageKey) return null;
-        // if already a full url
-        if (storageKey.startsWith('http://') || storageKey.startsWith('https://')) return storageKey;
-        // If backend returned a path like "/uploads/xxxx" or "uploads/xxxx", normalize
-        const maybe = storageKey.replace(/^\/+/, '');
-        // If storageKey already contains uploads/ keep it; else try last segment
-        if (maybe.includes('uploads')) {
-            return `http://localhost:5001/${maybe}`;
-        }
-        const filename = maybe.split('/').pop();
-        return `http://localhost:5001/uploads/${filename}`;
-    };
-
-    const fetchOrderDetails = async () => {
+    const fetchPendingOrders = async () => {
         setLoading(true);
-        setError(null);
-
         try {
-            const orderResponse = await fetch(`http://localhost:5001/api/orders/${orderId}`, {
-                credentials: "include",
-            });
-
-            if (!orderResponse.ok) {
-                const text = await orderResponse.text();
-                throw new Error(`Failed to fetch order details (status ${orderResponse.status}): ${text}`);
-            }
-
-            const orderData = await safeParseJson(orderResponse);
-            console.log('Order data', orderData);
-            setOrder(orderData);
-
-            // Attachments
-            try {
-                const attachmentsResponse = await fetch(
-                    `http://localhost:5001/api/attachments/order/${orderId}`,
-                    { credentials: "include" }
-                );
-
-                if (!attachmentsResponse.ok) {
-                    const t = await attachmentsResponse.text();
-                    console.warn('Attachments endpoint returned non-ok', attachmentsResponse.status, t);
-                    setAttachments([]); // explicitly set empty
-                } else {
-                    const rawAttachments = await safeParseJson(attachmentsResponse);
-                    console.log('Raw attachments response', rawAttachments);
-                    const arr = toArray(rawAttachments);
-                    const fileAttachments = arr.filter(isFileKind).map(att => ({
-                        ...att,
-                        // normalize fields
-                        mime_type: att.mime_type || att.mimeType || att.type || '',
-                        original_name: att.original_name || att.filename || att.name || 'file',
-                        storage_key: att.storage_key || att.path || att.url || '',
-                        size_bytes: att.size_bytes || att.size || 0,
-                        id: att.id || att._id || `${att.original_name}-${Math.random().toString(36).slice(2, 9)}`,
-                    })).map(att => ({
-                        ...att,
-                        url: buildFileUrl(att.storage_key),
-                    }));
-                    setAttachments(fileAttachments);
-                }
-            } catch (err) {
-                console.error("Failed to fetch attachments:", err);
-                setAttachments([]);
-            }
-
-            // Signature
-            try {
-                const signatureResponse = await fetch(
-                    `http://localhost:5001/api/signatures/order/${orderId}`,
-                    { credentials: "include" }
-                );
-
-                if (!signatureResponse.ok) {
-                    const t = await signatureResponse.text();
-                    console.warn('Signature endpoint returned non-ok', signatureResponse.status, t);
-                    setSignature(null);
-                } else {
-                    const rawSig = await safeParseJson(signatureResponse);
-                    console.log('Raw signature response', rawSig);
-                    const sigArr = toArray(rawSig);
-                    const sig = sigArr.length > 0 ? sigArr[0] : (rawSig && rawSig.signature ? rawSig.signature : null);
-
-                    if (sig) {
-                        const normalized = {
-                            ...sig,
-                            storage_key: sig.storage_key || sig.path || sig.url || '',
-                            mime_type: sig.mime_type || sig.mimeType || 'image/png',
-                            signed_at: sig.signed_at || sig.createdAt || sig.signedAt || null,
-                            signed_by_name: sig.signed_by_name || sig.signedBy || sig.by || null,
-                            url: buildFileUrl(sig.storage_key),
-                        };
-                        setSignature(normalized);
-                    } else {
-                        setSignature(null);
-                    }
-                }
-            } catch (err) {
-                console.error("Failed to fetch signature:", err);
-                setSignature(null);
-            }
-
+            const response = await fetch(`${BASE_API}/orders?status=Pending`, { credentials: "include" });
+            if (!response.ok) throw new Error("Failed to fetch orders");
+            const data = await response.json();
+            setOrders(data);
         } catch (err) {
-            console.error("Failed to fetch order:", err);
-            setError(err.message || 'Unknown error');
+            console.error("Failed to fetch pending orders:", err);
         } finally {
             setLoading(false);
         }
     };
 
+    const fetchOrderDetails = async (orderId) => {
+        setLoadingDetails(true);
+        setOrderDetails(null);
+        setAttachments([]);
+        setSignatureObj(null);
+        setSignatureUrl(null);
+
+        try {
+            // 1) main order (may already include attachments/signatures)
+            const resp = await fetch(`${BASE_API}/orders/${orderId}`, { credentials: "include" });
+            if (!resp.ok) throw new Error("Failed to fetch order details");
+            const order = await resp.json();
+            setOrderDetails(order);
+
+            // 2) attachments list (call dedicated endpoint to guarantee items)
+            try {
+                const aResp = await fetch(`${BASE_API}/attachments/order/${orderId}`, { credentials: "include" });
+                if (aResp.ok) {
+                    const aData = await aResp.json();
+                    setAttachments(aData || []);
+                } else {
+                    console.warn("Attachments list returned", aResp.status);
+                    // fallback to included attachments if present
+                    if (order.Attachments && order.Attachments.length > 0) setAttachments(order.Attachments);
+                }
+            } catch (e) {
+                console.warn("Failed to fetch attachments list:", e);
+                if (order.Attachments && order.Attachments.length > 0) setAttachments(order.Attachments);
+            }
+
+            // 3) signature object - dedicated endpoint ensures we get it if exists
+            try {
+                const sResp = await fetch(`${BASE_API}/signatures/order/${orderId}`, { credentials: "include" });
+                if (sResp.ok) {
+                    const sData = await sResp.json();
+                    setSignatureObj(sData);
+                    // build download/inline url for canvas
+                    setSignatureUrl(`${BASE_API}/signatures/${sData.id}/download?inline=1`);
+                } else {
+                    // fallback to included signature in orderDetails
+                    if (order.Signatures && order.Signatures.length > 0) {
+                        const s = order.Signatures[0];
+                        setSignatureObj(s);
+                        setSignatureUrl(`${BASE_API}/signatures/${s.id}/download?inline=1`);
+                    } else {
+                        setSignatureObj(null);
+                        setSignatureUrl(null);
+                    }
+                }
+            } catch (e) {
+                console.warn("Failed to fetch signature:", e);
+                if (order.Signatures && order.Signatures.length > 0) {
+                    const s = order.Signatures[0];
+                    setSignatureObj(s);
+                    setSignatureUrl(`${BASE_API}/signatures/${s.id}/download?inline=1`);
+                } else {
+                    setSignatureObj(null);
+                    setSignatureUrl(null);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to fetch order details:", err);
+            setOrderDetails(null);
+        } finally {
+            setLoadingDetails(false);
+        }
+    };
+
+    // draw signature into canvas whenever signatureUrl changes
+    useEffect(() => {
+        if (!signatureUrl || !signatureCanvasRef.current) return;
+        const canvas = signatureCanvasRef.current;
+        const ctx = canvas.getContext("2d");
+        const img = new Image();
+        img.crossOrigin = "anonymous"; // try to avoid tainting
+        img.onload = () => {
+            // clear and fit image while preserving aspect
+            const maxW = 560;
+            const maxH = 200;
+            let w = img.width;
+            let h = img.height;
+            const ratio = Math.min(maxW / w, maxH / h, 1);
+            w = Math.floor(w * ratio);
+            h = Math.floor(h * ratio);
+            canvas.width = w;
+            canvas.height = h;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, w, h);
+        };
+        img.onerror = (e) => {
+            console.warn("Signature image load failed:", e);
+            // leave canvas empty; UI will show fallback
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        };
+        img.src = signatureUrl;
+    }, [signatureUrl]);
+
+    const handleOrderClick = (order) => {
+        setSelectedOrder(order);
+        fetchOrderDetails(order.id);
+    };
+
+    const handleBackToList = () => {
+        setSelectedOrder(null);
+        setOrderDetails(null);
+        setAttachments([]);
+        setSignatureObj(null);
+        setSignatureUrl(null);
+    };
 
     const formatDate = (iso) => {
         if (!iso) return "N/A";
@@ -172,31 +224,62 @@ export default function PendingOrderViewer({ orderId, onClose }) {
         }).format(amount || 0);
     };
 
-    const getFileUrl = (storageKey) => {
-        // Extract filename from storage_key path
-        const filename = storageKey.split('/').pop();
-        return `http://localhost:5001/uploads/${filename}`;
-    };
-
     const openPreview = (attachment) => {
+        // prefer API download path (inline)
+        const url = `${BASE_API}/attachments/${attachment.id}/download?inline=1`;
         setPreviewModal({
-            url: getFileUrl(attachment.storage_key),
+            url,
             name: attachment.original_name,
             type: attachment.mime_type,
         });
     };
 
-    const downloadFile = (attachment) => {
-        const url = getFileUrl(attachment.storage_key);
+    const downloadFile = (url, filename) => {
         const a = document.createElement("a");
         a.href = url;
-        a.download = attachment.original_name;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
     };
 
-    if (loading) {
+    // List view
+    if (!selectedOrder) {
+        return (
+            <div className="min-h-screen bg-gray-50 p-8">
+                <div className="max-w-7xl mx-auto">
+                    <div className="mb-6">
+                        <h1 className="text-3xl font-bold text-gray-900">Pending Orders</h1>
+                        <p className="text-gray-600 mt-2">View all orders with pending status</p>
+                    </div>
+
+                    {loading ? (
+                        <div className="flex items-center justify-center py-12">
+                            <div className="text-center">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black mx-auto mb-4"></div>
+                                <p className="text-gray-600">Loading pending orders...</p>
+                            </div>
+                        </div>
+                    ) : orders.length === 0 ? (
+                        <div className="bg-white rounded-lg shadow-sm p-12 text-center">
+                            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">No Pending Orders</h3>
+                            <p className="text-gray-600">All orders have been processed</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {orders.map((order) => (
+                                <OrderCard key={order.id} order={order} onClick={handleOrderClick} />
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // Detail loading
+    if (loadingDetails) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="text-center">
@@ -207,82 +290,46 @@ export default function PendingOrderViewer({ orderId, onClose }) {
         );
     }
 
-    if (error) {
+    if (!orderDetails) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="bg-white rounded-lg shadow-lg p-8 max-w-md">
-                    <div className="text-red-600 text-center mb-4">
-                        <p className="font-semibold">Error loading order</p>
-                        <p className="text-sm mt-2">{error}</p>
-                    </div>
-                    <button
-                        onClick={onClose}
-                        className="w-full px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800"
-                    >
-                        Close
-                    </button>
-                </div>
+                <div className="text-center text-gray-600">Order details not available</div>
             </div>
         );
     }
 
-    if (!order) {
-        return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="text-center text-gray-600">Order not found</div>
-            </div>
-        );
-    }
-
-    const meta = order.meta || {};
+    const meta = orderDetails.meta || {};
     const pricing = meta.pricing || {};
     const items = meta.items || [];
 
     return (
         <div className="min-h-screen bg-gray-50">
             <div className="max-w-[1400px] mx-auto p-8">
-                {/* Header */}
-                <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <button
-                                onClick={onClose}
-                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                                title="Back to orders"
-                            >
-                                <ChevronLeft className="w-6 h-6" />
-                            </button>
+                {/* Back Button & Header */}
+                <div className="mb-6">
+                    <button onClick={handleBackToList} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4 transition-colors">
+                        <ArrowLeft className="w-5 h-5" />
+                        Back to Pending Orders
+                    </button>
+
+                    <div className="bg-white rounded-lg shadow-sm p-6">
+                        <div className="flex items-center justify-between">
                             <div>
-                                <h1 className="text-3xl font-bold text-gray-900">
-                                    Order #{order.order_number}
-                                </h1>
+                                <h1 className="text-3xl font-bold text-gray-900">Order #{orderDetails.order_number}</h1>
                                 <div className="flex items-center gap-4 mt-2">
-                                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${order.status === "Pending" ? "bg-yellow-100 text-yellow-800" :
-                                        order.status === "InProgress" ? "bg-blue-100 text-blue-800" :
-                                            order.status === "Completed" ? "bg-green-100 text-green-800" :
-                                                order.status === "Cancelled" ? "bg-red-100 text-red-800" :
-                                                    "bg-gray-100 text-gray-800"
-                                        }`}>
-                                        {order.status}
+                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                                        {orderDetails.status}
                                     </span>
-                                    <span className="text-sm text-gray-500">
-                                        Created: {formatDate(order.createdAt)}
-                                    </span>
+                                    <span className="text-sm text-gray-500">Created: {formatDate(orderDetails.createdAt)}</span>
                                 </div>
                             </div>
                         </div>
-                        <button
-                            onClick={onClose}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                            <X className="w-6 h-6" />
-                        </button>
                     </div>
                 </div>
 
                 {/* Main Content Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Left Column - Client & Service Info */}
+                    {/* Left Column */}
                     <div className="lg:col-span-2 space-y-6">
                         {/* Client Information */}
                         <div className="bg-white rounded-lg shadow-sm p-6">
@@ -312,31 +359,25 @@ export default function PendingOrderViewer({ orderId, onClose }) {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className="text-sm font-medium text-gray-500">Service Type</label>
-                                        <p className="text-base text-gray-900 mt-1 capitalize">
-                                            {meta.serviceType || "N/A"}
-                                        </p>
+                                        <p className="text-base text-gray-900 mt-1 capitalize">{meta.serviceType || "N/A"}</p>
                                     </div>
                                     <div>
                                         <label className="text-sm font-medium text-gray-500">Estimated Delivery</label>
-                                        <p className="text-base text-gray-900 mt-1">
-                                            {formatDate(order.estimated_delivery_at)}
-                                        </p>
+                                        <p className="text-base text-gray-900 mt-1">{formatDate(orderDetails.estimated_delivery_at)}</p>
                                     </div>
                                 </div>
 
-                                <div>
-                                    <label className="text-sm font-medium text-gray-500">Service Detail</label>
-                                    <p className="text-base text-gray-700 mt-1 whitespace-pre-wrap">
-                                        {meta.serviceDetail || "No details provided"}
-                                    </p>
-                                </div>
+                                {meta.serviceDetail && (
+                                    <div>
+                                        <label className="text-sm font-medium text-gray-500">Service Detail</label>
+                                        <p className="text-base text-gray-700 mt-1 whitespace-pre-wrap">{meta.serviceDetail}</p>
+                                    </div>
+                                )}
 
                                 {meta.observations && (
                                     <div>
                                         <label className="text-sm font-medium text-gray-500">Observations</label>
-                                        <p className="text-base text-gray-700 mt-1 whitespace-pre-wrap">
-                                            {meta.observations}
-                                        </p>
+                                        <p className="text-base text-gray-700 mt-1 whitespace-pre-wrap">{meta.observations}</p>
                                     </div>
                                 )}
                             </div>
@@ -345,42 +386,24 @@ export default function PendingOrderViewer({ orderId, onClose }) {
                         {/* Pricing Items */}
                         {items.length > 0 && (
                             <div className="bg-white rounded-lg shadow-sm p-6">
-                                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                                    Service Items
-                                </h2>
+                                <h2 className="text-lg font-semibold text-gray-900 mb-4">Service Items</h2>
                                 <div className="overflow-x-auto">
                                     <table className="w-full">
                                         <thead>
                                             <tr className="border-b border-gray-200">
-                                                <th className="text-left py-3 px-2 text-sm font-medium text-gray-700">
-                                                    Description
-                                                </th>
-                                                <th className="text-right py-3 px-2 text-sm font-medium text-gray-700">
-                                                    Quantity
-                                                </th>
-                                                <th className="text-right py-3 px-2 text-sm font-medium text-gray-700">
-                                                    Unit Price
-                                                </th>
-                                                <th className="text-right py-3 px-2 text-sm font-medium text-gray-700">
-                                                    Total
-                                                </th>
+                                                <th className="text-left py-3 px-2 text-sm font-medium text-gray-700">Description</th>
+                                                <th className="text-right py-3 px-2 text-sm font-medium text-gray-700">Qty</th>
+                                                <th className="text-right py-3 px-2 text-sm font-medium text-gray-700">Unit Price</th>
+                                                <th className="text-right py-3 px-2 text-sm font-medium text-gray-700">Total</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {items.map((item, idx) => (
                                                 <tr key={idx} className="border-b border-gray-100">
-                                                    <td className="py-3 px-2 text-sm text-gray-900 capitalize">
-                                                        {item.description.replace(/-/g, " ")}
-                                                    </td>
-                                                    <td className="py-3 px-2 text-sm text-gray-900 text-right">
-                                                        {item.quantity}
-                                                    </td>
-                                                    <td className="py-3 px-2 text-sm text-gray-900 text-right">
-                                                        {formatCurrency(item.unitPrice)}
-                                                    </td>
-                                                    <td className="py-3 px-2 text-sm text-gray-900 text-right">
-                                                        {formatCurrency(item.total)}
-                                                    </td>
+                                                    <td className="py-3 px-2 text-sm text-gray-900 capitalize">{(item.description || "").replace(/-/g, " ")}</td>
+                                                    <td className="py-3 px-2 text-sm text-gray-900 text-right">{item.quantity}</td>
+                                                    <td className="py-3 px-2 text-sm text-gray-900 text-right">{formatCurrency(item.unitPrice)}</td>
+                                                    <td className="py-3 px-2 text-sm text-gray-900 text-right">{formatCurrency(item.total)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -395,7 +418,8 @@ export default function PendingOrderViewer({ orderId, onClose }) {
                                 <FileText className="w-5 h-5" />
                                 Attachments ({attachments.length})
                             </h2>
-                            {attachments.length > 0 ? (
+
+                            {attachments && attachments.length > 0 ? (
                                 <div className="space-y-3">
                                     {attachments.map((attachment) => (
                                         <div
@@ -407,27 +431,22 @@ export default function PendingOrderViewer({ orderId, onClose }) {
                                                     <FileText className="w-5 h-5 text-gray-500" />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium text-gray-900 truncate">
-                                                        {attachment.original_name}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500">
-                                                        {Math.round(attachment.size_bytes / 1024)} KB
-                                                    </p>
+                                                    <p className="text-sm font-medium text-gray-900 truncate">{attachment.original_name}</p>
+                                                    <p className="text-xs text-gray-500">{Math.round((attachment.size_bytes || 0) / 1024)} KB</p>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2 flex-shrink-0">
-                                                {(attachment.mime_type?.startsWith("image/") ||
-                                                    attachment.mime_type === "application/pdf") && (
-                                                        <button
-                                                            onClick={() => openPreview(attachment)}
-                                                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                            title="Preview"
-                                                        >
-                                                            <Eye className="w-4 h-4" />
-                                                        </button>
-                                                    )}
+                                                {(attachment.mime_type?.startsWith("image/") || attachment.mime_type === "application/pdf") && (
+                                                    <button
+                                                        onClick={() => openPreview(attachment)}
+                                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                        title="Preview"
+                                                    >
+                                                        <Eye className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                                 <button
-                                                    onClick={() => downloadFile(attachment)}
+                                                    onClick={() => downloadFile(`${BASE_API}/attachments/${attachment.id}/download?inline=0`, attachment.original_name)}
                                                     className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                                                     title="Download"
                                                 >
@@ -443,14 +462,12 @@ export default function PendingOrderViewer({ orderId, onClose }) {
                         </div>
                     </div>
 
-                    {/* Right Column - Pricing & Signature */}
+                    {/* Right Column */}
                     <div className="space-y-6">
                         {/* Pricing Summary */}
                         {pricing.total > 0 && (
                             <div className="bg-white rounded-lg shadow-sm p-6">
-                                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                                    Pricing Summary
-                                </h2>
+                                <h2 className="text-lg font-semibold text-gray-900 mb-4">Pricing Summary</h2>
                                 <div className="space-y-3">
                                     <div className="flex justify-between text-sm">
                                         <span className="text-gray-600">Subtotal</span>
@@ -461,22 +478,18 @@ export default function PendingOrderViewer({ orderId, onClose }) {
                                         <span className="font-medium">{formatCurrency(pricing.iva)}</span>
                                     </div>
                                     <div className="border-t border-gray-200 pt-3 flex justify-between">
-                                        <span className="text-base font-semibold text-gray-900">Total</span>
-                                        <span className="text-base font-bold text-gray-900">
-                                            {formatCurrency(pricing.total)}
-                                        </span>
+                                        <span className="text-base font-semibold">Total</span>
+                                        <span className="text-base font-bold">{formatCurrency(pricing.total)}</span>
                                     </div>
                                     {pricing.deposit > 0 && (
                                         <>
                                             <div className="border-t border-gray-200 pt-3 flex justify-between text-sm">
-                                                <span className="text-gray-600">Deposit (Abono)</span>
+                                                <span className="text-gray-600">Deposit</span>
                                                 <span className="font-medium">{formatCurrency(pricing.deposit)}</span>
                                             </div>
                                             <div className="flex justify-between">
-                                                <span className="text-base font-semibold text-gray-900">Remaining</span>
-                                                <span className="text-base font-bold text-green-600">
-                                                    {formatCurrency(pricing.total - pricing.deposit)}
-                                                </span>
+                                                <span className="text-base font-semibold">Remaining</span>
+                                                <span className="text-base font-bold text-green-600">{formatCurrency(pricing.total - pricing.deposit)}</span>
                                             </div>
                                         </>
                                     )}
@@ -486,61 +499,44 @@ export default function PendingOrderViewer({ orderId, onClose }) {
 
                         {/* Signature */}
                         <div className="bg-white rounded-lg shadow-sm p-6">
-                            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                                Client Signature
-                            </h2>
-                            {signature ? (
+                            <h2 className="text-lg font-semibold text-gray-900 mb-4">Client Signature</h2>
+
+                            {signatureUrl ? (
                                 <div className="space-y-4">
-                                    <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                                        <img
-                                            src={signature?.url || getFileUrl(signature?.storage_key || '')}
-                                            alt="Client Signature"
-                                            className="w-full h-auto"
-                                            style={{ maxHeight: "200px", objectFit: "contain" }}
-                                        />
+                                    <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 flex items-center justify-center">
+                                        {/* Canvas where we draw the signature */}
+                                        <canvas ref={signatureCanvasRef} style={{ maxWidth: "100%", height: "auto" }} />
                                     </div>
+
                                     <div className="text-xs text-gray-500">
-                                        <p>Signed: {formatDate(signature.signed_at)}</p>
-                                        {signature.signed_by_name && (
-                                            <p>By: {signature.signed_by_name}</p>
-                                        )}
+                                        {signatureObj?.signed_at && <p>Signed: {formatDate(signatureObj.signed_at)}</p>}
+                                        {signatureObj?.signed_by_name && <p>By: {signatureObj.signed_by_name}</p>}
                                     </div>
-                                    <button
-                                        onClick={() => {
-                                            const url = getFileUrl(signature.storage_key);
-                                            const a = document.createElement("a");
-                                            a.href = url;
-                                            a.download = "signature.png";
-                                            document.body.appendChild(a);
-                                            a.click();
-                                            document.body.removeChild(a);
-                                        }}
-                                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors"
-                                    >
-                                        <Download className="w-4 h-4" />
-                                        Download Signature
-                                    </button>
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => downloadFile(signatureUrl.replace("inline=1", "inline=0"), "signature.png")}
+                                            className="flex-1 w-full flex items-center justify-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            Download Signature
+                                        </button>
+
+                                        <a
+                                            href={signatureUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="flex-1 w-full flex items-center justify-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50 transition-colors"
+                                        >
+                                            Open Raw
+                                        </a>
+                                    </div>
                                 </div>
                             ) : (
-                                <p className="text-sm text-gray-500">No signature available</p>
+                                <div>
+                                    <p className="text-sm text-gray-500">No signature available</p>
+                                </div>
                             )}
-                        </div>
-
-                        {/* Payment Status */}
-                        <div className="bg-white rounded-lg shadow-sm p-6">
-                            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                                Payment Status
-                            </h2>
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Status</span>
-                                    <span className="font-medium capitalize">{order.payment_status}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Total Amount</span>
-                                    <span className="font-medium">{formatCurrency(order.total_amount)}</span>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -551,30 +547,17 @@ export default function PendingOrderViewer({ orderId, onClose }) {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
                     <div className="relative w-[90vw] h-[85vh] bg-white rounded-lg shadow-xl overflow-hidden">
                         <div className="p-4 border-b flex items-center justify-between bg-gray-50">
-                            <h3 className="font-semibold text-gray-900 truncate flex-1 mr-4">
-                                {previewModal.name}
-                            </h3>
-                            <button
-                                onClick={() => setPreviewModal(null)}
-                                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
-                            >
+                            <h3 className="font-semibold text-gray-900 truncate flex-1 mr-4">{previewModal.name}</h3>
+                            <button onClick={() => setPreviewModal(null)} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <div className="flex-1 h-full overflow-auto bg-gray-100">
+                        <div className="h-[calc(100%-64px)] overflow-auto bg-gray-100">
                             {previewModal.type === "application/pdf" ? (
-                                <iframe
-                                    src={previewModal.url}
-                                    className="w-full h-full"
-                                    title={previewModal.name}
-                                />
+                                <iframe src={previewModal.url} className="w-full h-full" title={previewModal.name} />
                             ) : previewModal.type?.startsWith("image/") ? (
                                 <div className="flex items-center justify-center h-full p-4">
-                                    <img
-                                        src={previewModal.url}
-                                        alt={previewModal.name}
-                                        className="max-w-full max-h-full object-contain"
-                                    />
+                                    <img src={previewModal.url} alt={previewModal.name} className="max-w-full max-h-full object-contain" />
                                 </div>
                             ) : (
                                 <div className="flex items-center justify-center h-full">
