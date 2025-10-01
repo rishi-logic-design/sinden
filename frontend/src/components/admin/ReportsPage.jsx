@@ -1,16 +1,6 @@
 // ReportsFullTailwindImproved.jsx
 import React, { useMemo, useState } from "react";
 
-/**
- * ReportsFullTailwindImproved.jsx
- * - Tailwind-only
- * - Enhanced visuals: sticky header, nicer buttons, active filter pills, smooth transitions
- * - Filters (date range, client, status) apply on "Apply Filters"
- * - Pagination, totals and sample data included
- *
- * Drop into your project and render: <ReportsFullTailwindImproved />
- */
-
 const sampleData = [
   { id: "E150291", completed: "01/09/2025 - 13:32", client: "Juan Pérez", amount: 10000000, status: "Finalized" },
   { id: "E150292", completed: "01/09/2025 - 10:05", client: "Industrias Ríos", amount: 10000000, status: "Finalized" },
@@ -219,10 +209,10 @@ export default function ReportsPage() {
           {/* pagination */}
           <div className="flex items-center gap-3 text-sm text-slate-600">
             <div className="min-w-[140px] text-right">{totalItems === 0 ? "0 - 0 of 0" : `${startItem} - ${endItem} of ${totalItems}`}</div>
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className={`w-10 h-10 rounded-lg border ${page===1 ? "text-slate-300 cursor-not-allowed" : "hover:bg-slate-50"}`}>
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className={`w-10 h-10 rounded-lg  ${page===1 ? "text-slate-300 cursor-not-allowed" : "hover:bg-slate-50"}`}>
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
-            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className={`w-10 h-10 rounded-lg border ${page===totalPages ? "text-slate-300 cursor-not-allowed" : "hover:bg-slate-50"}`}>
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className={`w-10 h-10 rounded-lg  ${page===totalPages ? "text-slate-300 cursor-not-allowed" : "hover:bg-slate-50"}`}>
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
           </div>
