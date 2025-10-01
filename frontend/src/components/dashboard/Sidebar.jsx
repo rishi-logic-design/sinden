@@ -41,7 +41,7 @@ function OrderRow({ order, active, onOpen, isCollapsed }) {
   return (
     <button
       onClick={() => onOpen && onOpen(order)}
-      className={`w-full text-left flex items-start gap-3 p-3 rounded-lg transition-colors ${active ? "bg-gray-100" : "hover:bg-slate-50"
+      className={`w-full text-left cursor-pointer flex items-start gap-3 p-3 rounded-lg transition-colors ${active ? "bg-gray-100" : "hover:bg-slate-50"
         }`}
       type="button"
       title={isCollapsed ? `${order.id} - ${order.status}` : ""}
@@ -88,9 +88,7 @@ export default function Sidebar({ onNewOrder }) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelData, setPanelData] = useState(null);
   const [detailsText, setDetailsText] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [savedNotes, setSavedNotes] = useState({});
-  const [panelMode, setPanelMode] = useState("readonly"); // "editor" or "readonly"
+  const [panelMode, setPanelMode] = useState("readonly");
 
   const profileRef = useRef(null);
   const confirmRef = useRef(null);
@@ -98,7 +96,8 @@ export default function Sidebar({ onNewOrder }) {
 
   const [orders, setOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
-  const [activeView, setActiveView] = useState("new"); // "new" | "pending"
+  const [activeView, setActiveView] = useState("new");
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
 
   const currentUser = user || { name: "User", email: "user@company.com" };
 
@@ -114,23 +113,17 @@ export default function Sidebar({ onNewOrder }) {
   };
 
   function handleOrderClick(order) {
-    // sirf "pending" orders pe fullscreen PendingPage
-    if ((order.status || "").toLowerCase() === "pending") {
-      setPanelOpen(false);
-      setPanelData(null);
-      setActiveView("pending");
-    } else {
-      // baaki statuses pe existing side panel
-      openDetails(order);
-    }
+    // Open order viewer for all orders
+    setSelectedOrderId(order._dbId);
+    setActiveView("orderViewer");
+    setPanelOpen(false);
+    setPanelData(null);
   }
-
 
   // Fetch orders from database
   const fetchOrders = async () => {
     setLoadingOrders(true);
     try {
-      // Use ApiService instead of direct fetch
       const data = await ApiService.getOrders();
 
       const rows = (data || []).map((o) => ({
@@ -156,7 +149,6 @@ export default function Sidebar({ onNewOrder }) {
 
   // Handle when order is saved from form
   function handleOrderSavedFromForm(info) {
-    // Refresh orders from database to get real data
     fetchOrders();
   }
 
@@ -215,9 +207,9 @@ export default function Sidebar({ onNewOrder }) {
 
   const handleNewOrder = () => {
     setActiveView("new");
+    setSelectedOrderId(null);
     if (typeof onNewOrder === "function") return onNewOrder();
   };
-
 
   const toggleSidebar = () => {
     setIsCollapsed(!isCollapsed);
@@ -233,16 +225,8 @@ export default function Sidebar({ onNewOrder }) {
     } else {
       setPanelMode("readonly")
     }
-
     setPanelOpen(true)
   }
-
-
-  const handleOpenPending = () => {
-    setActiveView("pending");
-  };
-
-
 
   const handleLogout = async () => {
     setProcessing(true);
@@ -366,7 +350,7 @@ export default function Sidebar({ onNewOrder }) {
                 <OrderRow
                   key={o._dbId || o.id}
                   order={o}
-                  active={false}
+                  active={selectedOrderId === o._dbId}
                   onOpen={handleOrderClick}
                   isCollapsed={isCollapsed}
                 />
@@ -500,8 +484,14 @@ export default function Sidebar({ onNewOrder }) {
       >
         <div className="h-full">
           <div className="h-full">
-            {activeView === "pending" ? (
-              <PendingPage onBack={() => setActiveView("new")} />
+            {activeView === "orderViewer" && selectedOrderId ? (
+              <PendingPage
+                orderId={selectedOrderId}
+                onClose={() => {
+                  setActiveView("new");
+                  setSelectedOrderId(null);
+                }}
+              />
             ) : (
               <NewOrderFullScreen onOrderSaved={handleOrderSavedFromForm} />
             )}
