@@ -9,8 +9,15 @@ import ApiService from "../../services/ApiService";
 import useToast from "../../hooks/UseToast";
 import { validateOrderForm, sanitizeInput } from "../../utils/validation";
 import { useCallback } from "react";
+// Import new draft components
+import {
+  useDraftManager,
+  DraftStatus,
+  DraftRecoveryModal,
+  SubmitWarningModal
+} from "./DraftManager";
 
-export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
+export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDraft = null }) {
   // Form state
   const [formData, setFormData] = useState({
     clientName: "",
@@ -33,23 +40,36 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("Processing...");
   const [currentOrderId, setCurrentOrderId] = useState(null);
-  const [pricingKey, setPricingKey] = useState(0); // For force reset
+  const [pricingKey, setPricingKey] = useState(0);
+
+  // Draft-related state
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [showSubmitWarning, setShowSubmitWarning] = useState(false);
+  const [recoveredDraft, setRecoveredDraft] = useState(null);
 
   // Ref for first input to focus after reset
   const clientNameRef = useRef(null);
 
   const { toasts, showSuccess, showError, removeToast } = useToast();
 
+  // Initialize draft manager
+  const {
+    draftId,
+    lastSaved,
+    isSaving,
+    hasUnsavedChanges,
+    loadFromLocalStorage,
+    autoSaveDraft,
+    deleteDraft,
+    hasMinimumData
+  } = useDraftManager(formData, files, signature);
+
   // Set default date to today
   useEffect(() => {
     const today = new Date();
-
-    // auto set today's date
     const date = today.toISOString().split("T")[0];
-
-    // auto set time = current time + 2 hours
     const estimated = new Date(today.getTime() + 2 * 60 * 60 * 1000);
-    const time = estimated.toTimeString().slice(0, 5); // "HH:mm"
+    const time = estimated.toTimeString().slice(0, 5);
 
     setFormData((prev) => ({
       ...prev,
@@ -57,6 +77,45 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
       timeEstimated: time,
     }));
   }, []);
+
+  // Check for existing draft on mount
+  useEffect(() => {
+    if (initialDraft) {
+      // Load from passed draft (from Drafts page)
+      loadDraftData(initialDraft);
+    } else {
+      // Check localStorage for auto-saved draft
+      const localDraft = loadFromLocalStorage();
+      if (localDraft && !recoveredDraft) {
+        setRecoveredDraft(localDraft);
+        setShowRecoveryModal(true);
+      }
+    }
+  }, [initialDraft]);
+
+  // Load draft data into form
+  const loadDraftData = (draft) => {
+    if (draft.formData) {
+      setFormData(draft.formData);
+    }
+    // Note: Files and signature would need special handling
+    // as they can't be restored from localStorage
+    setShowRecoveryModal(false);
+    showSuccess("Draft loaded successfully");
+  };
+
+  // Handle draft recovery
+  const handleRecoverDraft = () => {
+    if (recoveredDraft) {
+      loadDraftData(recoveredDraft);
+    }
+  };
+
+  const handleDiscardDraft = () => {
+    deleteDraft();
+    setShowRecoveryModal(false);
+    setRecoveredDraft(null);
+  };
 
   // Real-time validation functions
   const validatePhone = (phone) => {
@@ -81,7 +140,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
   const validateContactField = (contact) => {
     if (!contact) return "Contact information is required";
 
-    // Check if it's a phone number (contains only digits, spaces, dashes, parentheses)
     const phonePattern = /^[\d\s\-\(\)]+$/;
     const emailPattern = /@/;
 
@@ -94,15 +152,10 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
     }
   };
 
-  // Handle pricing data changes (for future integration)
+  // Handle pricing data changes
   const handlePricingChange = useCallback((data) => {
     setPricingData(data);
   }, []);
-
-  // Reset pricing data when form resets
-  const resetPricingData = () => {
-    setPricingData(null);
-  };
 
   // Update form data with real-time validation
   const updateFormData = (field, value) => {
@@ -119,7 +172,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
         contact: contactError,
       }));
     } else {
-      // Clear error for this field if it exists
       if (errors[field]) {
         setErrors((prev) => ({
           ...prev,
@@ -127,6 +179,19 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
         }));
       }
     }
+  };
+
+  // Get missing fields for warning modal
+  const getMissingFields = () => {
+    const missing = [];
+    if (!formData.clientName.trim()) missing.push("Client name");
+    if (validateContactField(formData.contact)) missing.push("Valid contact (Phone/Gmail)");
+    if (!formData.serviceType) missing.push("Service type");
+    if (!formData.dateEstimated) missing.push("Estimated delivery date");
+    if (!formData.timeEstimated) missing.push("Estimated delivery time");
+    if (files.length === 0) missing.push("At least one attachment");
+    if (!signature) missing.push("Client signature");
+    return missing;
   };
 
   // Validate form
@@ -142,13 +207,11 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
     const validation = validateOrderForm(sanitizedData);
     const newErrors = { ...validation.errors };
 
-    // Enhanced contact validation
     const contactError = validateContactField(formData.contact);
     if (contactError) {
       newErrors.contact = contactError;
     }
 
-    // Additional validations for files and signature
     if (files.length === 0) {
       newErrors.files = "At least one attachment is required";
     }
@@ -182,7 +245,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
       plant_id: 1,
       estimated_delivery_at: estimatedDelivery,
       total_amount: pricingData?.pricing?.total || 0,
-      // ALWAYS set to "Pending" when order is created (not draft)
       status: isDraft ? undefined : "Pending",
       payment_status: isDraft ? "draft" : "None",
       meta: {
@@ -195,7 +257,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
         fileCount: files.length,
         hasSignature: !!signature,
         createdAt: new Date().toISOString(),
-        // Add pricing data if available
         ...(pricingData && {
           items: pricingData.items,
           pricing: pricingData.pricing
@@ -204,7 +265,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
     };
   };
 
-  // Save draft
+  // Save draft manually
   const handleSaveDraft = async () => {
     if (!formData.clientName.trim()) {
       showError("Client name is required to save draft");
@@ -221,7 +282,9 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
       setCurrentOrderId(result.id);
       showSuccess("Draft saved successfully");
 
-      // Notify parent component
+      // Delete auto-save backup after manual save
+      deleteDraft();
+
       onOrderSaved({
         mode: "draft",
         orderId: result.id,
@@ -235,15 +298,38 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
     }
   };
 
-  // Submit order
+  // Submit order with validation check
   const handleSubmitOrder = async () => {
+    const missingFields = getMissingFields();
+
+    // If form is incomplete, show warning modal
+    if (missingFields.length > 0) {
+      setShowSubmitWarning(true);
+      return;
+    }
+
+    await submitOrder();
+  };
+
+  // Handle submit from warning modal
+  const handleSubmitFromWarning = () => {
+    setShowSubmitWarning(false);
+    // Just close modal, let user fill missing fields
+  };
+
+  const handleSaveDraftFromWarning = async () => {
+    setShowSubmitWarning(false);
+    await handleSaveDraft();
+  };
+
+  // Actual submit logic
+  const submitOrder = async () => {
     if (!validateForm()) return;
 
     setIsLoading(true);
     setLoadingMessage("Submitting order...");
 
     try {
-      // Create order first - it will automatically be set to "Pending" status
       const payload = createOrderPayload(false);
       const result = await ApiService.createOrder(payload);
       const orderId = result.id;
@@ -290,12 +376,13 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
         }
       }
 
-      // Success
       showSuccess(
         `Order ${result.order_number || orderId} created successfully with Pending status!`
       );
 
-      // Notify parent component with status
+      // Delete auto-save draft after successful submission
+      deleteDraft();
+
       onOrderSaved({
         mode: "submitted",
         orderId: result.id,
@@ -304,7 +391,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
         payload,
       });
 
-      // Reset form immediately and focus on first input
       setTimeout(() => {
         resetForm();
         if (clientNameRef.current) {
@@ -335,7 +421,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
     setErrors({});
     setSignature(null);
 
-    // Clean up file URLs
     files.forEach((f) => {
       if (f.url && f.url.startsWith("blob:")) {
         URL.revokeObjectURL(f.url);
@@ -343,8 +428,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
     });
     setFiles([]);
     setCurrentOrderId(null);
-
-    // Reset pricing section by using key prop
     setPricingKey(prev => prev + 1);
   };
 
@@ -357,7 +440,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
       formData.timeEstimated &&
       files.length > 0 &&
       signature &&
-      !validateContactField(formData.contact) // No contact validation error
+      !validateContactField(formData.contact)
     );
   };
 
@@ -373,6 +456,16 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
           {/* Header */}
           <div className="mb-6">
             <h1 className="text-4xl mb-10 font-bold text-gray-900">New Order</h1>
+            {hasMinimumData && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm text-blue-700">
+                  Your progress is being auto-saved. You can safely leave and continue later.
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Client & Contact */}
@@ -488,7 +581,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
                 </p>
               )}
             </div>
-
           </div>
 
           {/* Service Details */}
@@ -535,7 +627,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
             )}
           </div>
 
-          {/* Attachments - Full Width */}
+          {/* Attachments */}
           <div className="mb-6">
             <FileUpload
               files={files}
@@ -587,16 +679,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
               <div className="text-xs text-gray-500">
                 {isFormValid()
                   ? "✓ All requirements met"
-                  : `${6 -
-                  [
-                    formData.clientName.trim(),
-                    !validateContactField(formData.contact),
-                    formData.serviceType,
-                    formData.dateEstimated,
-                    formData.timeEstimated,
-                    files.length > 0 && signature,
-                  ].filter(Boolean).length
-                  } items remaining`}
+                  : `${getMissingFields().length} items remaining`}
               </div>
             </div>
             {!isFormValid() && (
@@ -620,7 +703,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
             <button
               type="button"
               onClick={handleSubmitOrder}
-              disabled={isLoading || !isFormValid()}
+              disabled={isLoading}
               className="px-6 py-2 rounded-md bg-black text-white text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Submit Order
@@ -644,6 +727,32 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { } }) {
             onClose={() => setPreview(null)}
           />
         )}
+
+        {/* Draft Recovery Modal */}
+        {showRecoveryModal && recoveredDraft && (
+          <DraftRecoveryModal
+            draftData={recoveredDraft}
+            onRecover={handleRecoverDraft}
+            onDiscard={handleDiscardDraft}
+          />
+        )}
+
+        {/* Submit Warning Modal */}
+        {showSubmitWarning && (
+          <SubmitWarningModal
+            missingFields={getMissingFields()}
+            onSaveDraft={handleSaveDraftFromWarning}
+            onContinue={handleSubmitFromWarning}
+            onCancel={() => setShowSubmitWarning(false)}
+          />
+        )}
+
+        {/* Draft Status Indicator */}
+        <DraftStatus
+          lastSaved={lastSaved}
+          isSaving={isSaving}
+          hasUnsavedChanges={hasUnsavedChanges}
+        />
 
         {/* Toast Messages */}
         {toasts.map((toast) => (

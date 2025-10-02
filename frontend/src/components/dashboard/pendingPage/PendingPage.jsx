@@ -1,17 +1,6 @@
-// PendingPage.jsx
-import React, { useState, useEffect, useRef } from "react";
-import { X, Download, Eye, FileText, ArrowLeft, Package, User, Calendar, DollarSign } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, Download, Eye, FileText, ArrowLeft, Package, User } from "lucide-react";
 
-/**
- * PendingPage.jsx
- * - Fetches orders list
- * - On click: fetches order details (GET /api/orders/:id)
- * - Additionally always fetches attachments list (GET /api/attachments/order/:orderId)
- *   and signature object (GET /api/signatures/order/:orderId) to ensure we show them.
- * - Signature is drawn into a <canvas> for display. If draw fails, we show a fallback image / download link.
- *
- * NOTE: Adjust BASE_API if your server base differs.
- */
 const BASE_API = "http://localhost:5001/api";
 
 function OrderCard({ order, onClick }) {
@@ -51,30 +40,21 @@ function OrderCard({ order, onClick }) {
                     <Package className="w-4 h-4 text-gray-400" />
                     <span className="text-gray-700 capitalize">{meta.serviceType || "N/A"}</span>
                 </div>
-                {order.total_amount > 0 && (
-                    <div className="flex items-center gap-2 text-sm">
-                        <DollarSign className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-700 font-medium">${Number(order.total_amount).toFixed(2)}</span>
-                    </div>
-                )}
             </div>
         </button>
     );
 }
 
-export default function PendingOrdersPage({ onBack }) {
+export default function PendingOrdersPage() {
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedOrder, setSelectedOrder] = useState(null);
     const [orderDetails, setOrderDetails] = useState(null);
     const [loadingDetails, setLoadingDetails] = useState(false);
     const [previewModal, setPreviewModal] = useState(null);
-
-    // attachments + signature state (always fetched separately to guarantee display)
     const [attachments, setAttachments] = useState([]);
-    const [signatureObj, setSignatureObj] = useState(null); // signature DB row
-    const [signatureUrl, setSignatureUrl] = useState(null); // URL to download/inline
-    const signatureCanvasRef = useRef(null);
+    const [signatureUrl, setSignatureUrl] = useState(null);
+    const [signatureObj, setSignatureObj] = useState(null);
 
     useEffect(() => {
         fetchPendingOrders();
@@ -94,6 +74,7 @@ export default function PendingOrdersPage({ onBack }) {
         }
     };
 
+
     const fetchOrderDetails = async (orderId) => {
         setLoadingDetails(true);
         setOrderDetails(null);
@@ -102,44 +83,45 @@ export default function PendingOrdersPage({ onBack }) {
         setSignatureUrl(null);
 
         try {
-            // 1) main order (may already include attachments/signatures)
+            // Fetch main order
             const resp = await fetch(`${BASE_API}/orders/${orderId}`, { credentials: "include" });
             if (!resp.ok) throw new Error("Failed to fetch order details");
             const order = await resp.json();
             setOrderDetails(order);
 
-            // 2) attachments list (call dedicated endpoint to guarantee items)
+            // Fetch attachments
             try {
                 const aResp = await fetch(`${BASE_API}/attachments/order/${orderId}`, { credentials: "include" });
                 if (aResp.ok) {
                     const aData = await aResp.json();
                     setAttachments(aData || []);
-                } else {
-                    console.warn("Attachments list returned", aResp.status);
-                    // fallback to included attachments if present
-                    if (order.Attachments && order.Attachments.length > 0) setAttachments(order.Attachments);
+                } else if (order.Attachments && order.Attachments.length > 0) {
+                    setAttachments(order.Attachments);
                 }
             } catch (e) {
-                console.warn("Failed to fetch attachments list:", e);
-                if (order.Attachments && order.Attachments.length > 0) setAttachments(order.Attachments);
+                console.warn("Failed to fetch attachments:", e);
+                if (order.Attachments && order.Attachments.length > 0) {
+                    setAttachments(order.Attachments);
+                }
             }
 
-            // 3) signature object - dedicated endpoint ensures we get it if exists
+            // Fetch signature
             try {
-                const sResp = await fetch(`${BASE_API}/signatures/order/${orderId}`, { credentials: "include" });
+                const sResp = await fetch(`${BASE_API}/signatures/order/${orderId}`, { credentials: 'include' });
                 if (sResp.ok) {
                     const sData = await sResp.json();
-                    setSignatureObj(sData);
-                    // build download/inline url for canvas
-                    setSignatureUrl(`${BASE_API}/signatures/${sData.id}/download?inline=1`);
-                } else {
-                    // fallback to included signature in orderDetails
-                    if (order.Signatures && order.Signatures.length > 0) {
-                        const s = order.Signatures[0];
-                        setSignatureObj(s);
+                    setSignatureObj(sData || null);
+                    if (sData?.id) {
+                        setSignatureUrl(`${BASE_API}/signatures/${sData.id}/download?inline=1`);
+                    } else {
+                        setSignatureUrl(null);
+                    }
+                } else if (order.Signatures && order.Signatures.length > 0) {
+                    const s = order.Signatures[0];
+                    setSignatureObj(s);
+                    if (s?.id) {
                         setSignatureUrl(`${BASE_API}/signatures/${s.id}/download?inline=1`);
                     } else {
-                        setSignatureObj(null);
                         setSignatureUrl(null);
                     }
                 }
@@ -148,12 +130,15 @@ export default function PendingOrdersPage({ onBack }) {
                 if (order.Signatures && order.Signatures.length > 0) {
                     const s = order.Signatures[0];
                     setSignatureObj(s);
-                    setSignatureUrl(`${BASE_API}/signatures/${s.id}/download?inline=1`);
-                } else {
-                    setSignatureObj(null);
-                    setSignatureUrl(null);
+                    if (s?.id) {
+                        setSignatureUrl(`${BASE_API}/signatures/${s.id}/download?inline=1`);
+                    } else {
+                        setSignatureUrl(null);
+                    }
                 }
             }
+
+
         } catch (err) {
             console.error("Failed to fetch order details:", err);
             setOrderDetails(null);
@@ -161,36 +146,6 @@ export default function PendingOrdersPage({ onBack }) {
             setLoadingDetails(false);
         }
     };
-
-    // draw signature into canvas whenever signatureUrl changes
-    useEffect(() => {
-        if (!signatureUrl || !signatureCanvasRef.current) return;
-        const canvas = signatureCanvasRef.current;
-        const ctx = canvas.getContext("2d");
-        const img = new Image();
-        img.crossOrigin = "anonymous"; // try to avoid tainting
-        img.onload = () => {
-            // clear and fit image while preserving aspect
-            const maxW = 560;
-            const maxH = 200;
-            let w = img.width;
-            let h = img.height;
-            const ratio = Math.min(maxW / w, maxH / h, 1);
-            w = Math.floor(w * ratio);
-            h = Math.floor(h * ratio);
-            canvas.width = w;
-            canvas.height = h;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0, w, h);
-        };
-        img.onerror = (e) => {
-            console.warn("Signature image load failed:", e);
-            // leave canvas empty; UI will show fallback
-            const ctx = canvas.getContext("2d");
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-        };
-        img.src = signatureUrl;
-    }, [signatureUrl]);
 
     const handleOrderClick = (order) => {
         setSelectedOrder(order);
@@ -225,7 +180,6 @@ export default function PendingOrdersPage({ onBack }) {
     };
 
     const openPreview = (attachment) => {
-        // prefer API download path (inline)
         const url = `${BASE_API}/attachments/${attachment.id}/download?inline=1`;
         setPreviewModal({
             url,
@@ -304,7 +258,7 @@ export default function PendingOrdersPage({ onBack }) {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            <div className="max-w-[1400px] mx-auto p-8">
+            <div className="max-w-7xl mx-auto p-8">
                 {/* Back Button & Header */}
                 <div className="mb-6">
                     <button onClick={handleBackToList} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4 transition-colors">
@@ -329,7 +283,7 @@ export default function PendingOrdersPage({ onBack }) {
 
                 {/* Main Content Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Left Column */}
+                    {/* Left Column - 2/3 width */}
                     <div className="lg:col-span-2 space-y-6">
                         {/* Client Information */}
                         <div className="bg-white rounded-lg shadow-sm p-6">
@@ -411,6 +365,42 @@ export default function PendingOrdersPage({ onBack }) {
                                 </div>
                             </div>
                         )}
+                    </div>
+
+                    {/* Right Column - 1/3 width */}
+                    <div className="space-y-6">
+                        {/* Pricing Summary */}
+                        {pricing.total > 0 && (
+                            <div className="bg-white rounded-lg shadow-sm p-6">
+                                <h2 className="text-lg font-semibold text-gray-900 mb-4">Pricing Summary</h2>
+                                <div className="space-y-3">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-600">Subtotal</span>
+                                        <span className="font-medium">{formatCurrency(pricing.subtotal)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-600">IVA (16%)</span>
+                                        <span className="font-medium">{formatCurrency(pricing.iva)}</span>
+                                    </div>
+                                    <div className="border-t border-gray-200 pt-3 flex justify-between">
+                                        <span className="text-base font-semibold">Total</span>
+                                        <span className="text-base font-bold">{formatCurrency(pricing.total)}</span>
+                                    </div>
+                                    {pricing.deposit > 0 && (
+                                        <>
+                                            <div className="border-t border-gray-200 pt-3 flex justify-between text-sm">
+                                                <span className="text-gray-600">Deposit</span>
+                                                <span className="font-medium">{formatCurrency(pricing.deposit)}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-base font-semibold">Remaining</span>
+                                                <span className="text-base font-bold text-green-600">{formatCurrency(pricing.total - pricing.deposit)}</span>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Attachments */}
                         <div className="bg-white rounded-lg shadow-sm p-6">
@@ -461,84 +451,53 @@ export default function PendingOrdersPage({ onBack }) {
                             )}
                         </div>
                     </div>
+                </div>
 
-                    {/* Right Column */}
-                    <div className="space-y-6">
-                        {/* Pricing Summary */}
-                        {pricing.total > 0 && (
-                            <div className="bg-white rounded-lg shadow-sm p-6">
-                                <h2 className="text-lg font-semibold text-gray-900 mb-4">Pricing Summary</h2>
-                                <div className="space-y-3">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-600">Subtotal</span>
-                                        <span className="font-medium">{formatCurrency(pricing.subtotal)}</span>
-                                    </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-600">IVA (16%)</span>
-                                        <span className="font-medium">{formatCurrency(pricing.iva)}</span>
-                                    </div>
-                                    <div className="border-t border-gray-200 pt-3 flex justify-between">
-                                        <span className="text-base font-semibold">Total</span>
-                                        <span className="text-base font-bold">{formatCurrency(pricing.total)}</span>
-                                    </div>
-                                    {pricing.deposit > 0 && (
-                                        <>
-                                            <div className="border-t border-gray-200 pt-3 flex justify-between text-sm">
-                                                <span className="text-gray-600">Deposit</span>
-                                                <span className="font-medium">{formatCurrency(pricing.deposit)}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-base font-semibold">Remaining</span>
-                                                <span className="text-base font-bold text-green-600">{formatCurrency(pricing.total - pricing.deposit)}</span>
-                                            </div>
-                                        </>
-                                    )}
+                {/* Signature Section - Full Width at Bottom */}
+                <div className="mt-6 bg-white rounded-lg shadow-sm p-8">
+                    <h2 className="text-2xl font-semibold text-gray-900 mb-6">Client Signature</h2>
+
+                    {signatureUrl ? (
+                        <div className="space-y-4">
+                            <div className="border-2 border-gray-300 rounded-lg bg-gray-50 flex items-center justify-center min-h-[300px]">
+                                {signatureUrl ? (
+                                    <img
+                                        src={signatureUrl}
+                                        alt="Signature"
+                                        className="max-h-76 object-contain overflow-hidden"
+                                        onError={(e) => {
+                                            console.warn('Signature image failed:', signatureUrl);
+                                            e.currentTarget.style.display = 'none';
+                                        }}
+                                    />
+                                ) : (
+                                    <span className="text-gray-500">No signature found</span>
+                                )}
+
+                                <div className="text-center text-gray-500" style={{ display: 'none' }}>
+                                    <p>Unable to load signature image</p>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Signature */}
-                        <div className="bg-white rounded-lg shadow-sm p-6">
-                            <h2 className="text-lg font-semibold text-gray-900 mb-4">Client Signature</h2>
-
-                            {signatureUrl ? (
-                                <div className="space-y-4">
-                                    <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 flex items-center justify-center">
-                                        {/* Canvas where we draw the signature */}
-                                        <canvas ref={signatureCanvasRef} style={{ maxWidth: "100%", height: "auto" }} />
+                            {signatureObj && (
+                                <div className="flex items-center justify-between text-sm text-gray-600 bg-gray-50 p-4 rounded-lg">
+                                    <div className="space-y-1">
+                                        {signatureObj.signed_at && (
+                                            <p><span className="font-medium">Signed:</span> {formatDate(signatureObj.signed_at)}</p>
+                                        )}
+                                        {signatureObj.signed_by_name && (
+                                            <p><span className="font-medium">By:</span> {signatureObj.signed_by_name}</p>
+                                        )}
                                     </div>
-
-                                    <div className="text-xs text-gray-500">
-                                        {signatureObj?.signed_at && <p>Signed: {formatDate(signatureObj.signed_at)}</p>}
-                                        {signatureObj?.signed_by_name && <p>By: {signatureObj.signed_by_name}</p>}
-                                    </div>
-
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={() => downloadFile(signatureUrl.replace("inline=1", "inline=0"), "signature.png")}
-                                            className="flex-1 w-full flex items-center justify-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors"
-                                        >
-                                            <Download className="w-4 h-4" />
-                                            Download Signature
-                                        </button>
-
-                                        <a
-                                            href={signatureUrl}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="flex-1 w-full flex items-center justify-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50 transition-colors"
-                                        >
-                                            Open Raw
-                                        </a>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div>
-                                    <p className="text-sm text-gray-500">No signature available</p>
                                 </div>
                             )}
                         </div>
-                    </div>
+                    ) : (
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center bg-gray-50">
+                            <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                            <p className="text-gray-500 text-lg">No signature available for this order</p>
+                        </div>
+                    )}
                 </div>
             </div>
 
