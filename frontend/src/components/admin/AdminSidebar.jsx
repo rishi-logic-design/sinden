@@ -182,7 +182,7 @@ export default function AdminSidebar({ onNewOrder }) {
         className={`${sidebarWidth} fixed left-0 top-0 h-full bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out z-40`}
       >
         {/* Logo / top with toggle */}
-        <div className="flex items-center justify-between px-4 py-4 border-b border-gray-200 relative">
+        <div className="flex items-center justify-between px-4 py-4  relative">
           <div
             className={`transition-all cursor-pointer duration-300 relative ${isCollapsed ? "w-8 h-8" : "w-12 h-12"
               }`}
@@ -373,13 +373,12 @@ export default function AdminSidebar({ onNewOrder }) {
           </div>
         </div>
       </aside>
-
       {/* Content area */}
       <div
         className={`${contentMargin} flex-1 h-screen overflow-y-auto transition-all duration-300 ease-in-out bg-gray-50`}
       >
         <div className="h-full">
-          <div className="p-6">
+          <div className="min-h-full">
             {/* Content rendered here */}
             {renderContent()}
           </div>

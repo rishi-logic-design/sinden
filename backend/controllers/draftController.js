@@ -129,23 +129,28 @@ exports.getLatestAutoSave = async (req, res) => {
 
         const where = { status: 'auto' };
         if (userId) where.user_id = userId;
-
         const draft = await Draft.findOne({
             where,
             order: [["last_modified", "DESC"]],
             include: [{ model: User, as: "user", attributes: ["id", "fullName", "email"] }],
         });
-
         if (!draft) {
             return res.status(200).json({ success: true, draft: null });
         }
+        const draftObj = draft.get({ plain: true });
+        try {
+            await Draft.destroy({ where: { id: draft.id } });
+        } catch (delErr) {
+            console.error("Failed to delete auto-saved draft after fetch:", delErr);
+        }
 
-        res.status(200).json({ success: true, draft });
+        res.status(200).json({ success: true, draft: draftObj });
     } catch (error) {
         console.error("Draft.getLatestAutoSave error:", error);
         res.status(500).json({ success: false, error: "Failed to fetch latest draft" });
     }
 };
+
 
 // Get draft by ID
 exports.getById = async (req, res) => {

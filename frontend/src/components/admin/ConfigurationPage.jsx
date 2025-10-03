@@ -1,13 +1,6 @@
 // ConfigurationPage.jsx
 import React, { useState } from "react";
 
-/**
- * Full-width Configuration page (English)
- * - Top blue border
- * - Light card with visible border around the content area
- * - Left title column and right form column with extra horizontal spacing (gap-12)
- * - Tailwind CSS only
- */
 
 export default function ConfigurationPage() {
   const [user, setUser] = useState({
@@ -44,41 +37,36 @@ export default function ConfigurationPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Thin top blue border like screenshot */}
-      <div className="border-t-4 border-blue-500" />
+    <div className="min-h-screen ">
 
       {/* Page header */}
-      <header className="w-full px-8 pt-6 pb-4">
-        <h1 className="text-3xl font-semibold text-slate-900">Configuration</h1>
+      <header className="w-full px-8 bg-white pb-6">
+        <h1 className="text-3xl pt-6 font-semibold text-slate-900">Configuration</h1>
       </header>
 
       {/* Full-width content */}
       <main className="w-full px-8 pb-12">
         <form onSubmit={handleSaveProfile} className="w-full">
-          {/* Card container with visible border and background */}
-          <div className="w-full bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
-            <div className="px-12 py-10">
-              {/* GRID: left title (3 cols) | right form (9 cols) with larger gap */}
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-y-6 gap-x-12 items-start">
-                {/* Left title column */}
+          <div className="w-full rounded-md overflow-hidden">
+            <div className=" py-10">
+              <div className="grid grid-cols-1 md:grid-cols gap-y-6 gap-x-12 items-start">
                 <div className="md:col-span-3">
-                  <h2 className="text-lg font-semibold text-slate-900">User details</h2>
+                  <h2 className="text-2xl font-semibold text-slate-900">User Details</h2>
                   <p className="mt-2 text-sm text-slate-500">
                     Basic account information (name, email and role).
                   </p>
                 </div>
 
                 {/* Right fields column */}
-                <div className="md:col-span-9">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="md:col-span-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm text-slate-600 mb-2">User name</label>
                       <input
                         type="text"
                         value={user.username}
                         onChange={(e) => updateUser("username", e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-gray-200"
+                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm focus:outline-none"
                       />
                     </div>
 
@@ -88,7 +76,7 @@ export default function ConfigurationPage() {
                         type="email"
                         value={user.email}
                         onChange={(e) => updateUser("email", e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-gray-200"
+                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm focus:outline-none"
                       />
                     </div>
 
@@ -97,8 +85,7 @@ export default function ConfigurationPage() {
                       <select
                         value={user.role}
                         onChange={(e) => updateUser("role", e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm focus:outline-none"
-                      >
+                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm focus:outline-none">
                         <option>Administrator</option>
                         <option>Receptionist</option>
                         <option>Operator</option>
@@ -109,16 +96,16 @@ export default function ConfigurationPage() {
                 </div>
 
                 {/* Separator */}
-                <div className="md:col-span-12 border-t border-gray-100 my-6" />
+                <div className="md:col-span-12 border-t border-gray-200 my-6" />
 
                 {/* SECURITY row */}
                 <div className="md:col-span-3">
-                  <h2 className="text-lg font-semibold text-slate-900">Security</h2>
+                  <h2 className="text-2xl font-semibold text-slate-900">Security</h2>
                   <p className="mt-2 text-sm text-slate-500">Change your password when needed.</p>
                 </div>
 
                 <div className="md:col-span-9">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm text-slate-600 mb-2">Current password</label>
                       <input
@@ -165,7 +152,7 @@ export default function ConfigurationPage() {
                 </div>
 
                 {/* Separator */}
-                <div className="md:col-span-12 border-t border-gray-100 my-6" />
+                <div className="md:col-span-12 border-t border-gray-200 my-6" />
 
                 {/* SESSION row */}
                 <div className="md:col-span-3">

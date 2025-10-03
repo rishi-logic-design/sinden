@@ -26,7 +26,12 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     serviceDetail: "",
     observations: "",
   });
-
+  // Generate a unique order number
+  function generateOrderNumber() {
+    // get last 6 digits of timestamp
+    const num = Date.now().toString().slice(-6);
+    return `D${num}`;
+  }
   const [pricingData, setPricingData] = useState(null);
   const [files, setFiles] = useState([]);
   const [signature, setSignature] = useState(null);
@@ -76,21 +81,51 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     const checkForDraft = async () => {
       if (initialDraft) {
         loadDraftData(initialDraft);
-      } else {
-        try {
-          const result = await ApiService.getLatestAutoSave();
-          if (result?.success && result?.draft) {
-            setRecoveredDraft(result.draft);
-            setShowRecoveryModal(true);
-          }
-        } catch (error) {
-          console.error('Failed to check for drafts:', error);
+        return;
+      }
+
+      try {
+        // 1) First try server auto-save recovery
+        const result = await ApiService.getLatestAutoSave();
+        if (result?.success && result?.draft) {
+          // server draft shape uses `form_data` etc.
+          setRecoveredDraft(result.draft);
+          setShowRecoveryModal(true);
+          return;
         }
+
+        // 2) If no server draft, try localStorage backup (offline autosave fallback)
+        try {
+          const raw = localStorage.getItem('order_draft_backup');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const backup = parsed.snapshot ?? parsed;
+            const normalized = {
+              form_data: backup.formData || backup.form_data || {},
+              files_meta: backup.files || backup.files_meta || [],
+              has_signature: !!backup.signature || !!backup.hasSignature,
+              timestamp: parsed.timestamp || backup.timestamp || new Date().toISOString(),
+              __localBackup: true,
+              __localRaw: parsed,
+              pricingData: backup.pricingData
+            };
+            setRecoveredDraft(normalized);
+            setShowRecoveryModal(true);
+            return;
+          }
+        } catch (e) {
+          console.warn('Failed to parse local draft backup', e);
+        }
+
+        // nothing found
+      } catch (error) {
+        console.error('Failed to check for drafts:', error);
       }
     };
 
     checkForDraft();
   }, [initialDraft]);
+
 
   // Load draft data into form
   const loadDraftData = (draft) => {
@@ -224,6 +259,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     return true;
   };
 
+
   const createOrderPayload = () => {
     const estimatedDelivery =
       formData.dateEstimated && formData.timeEstimated
@@ -233,7 +269,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
         : new Date().toISOString();
 
     return {
-      order_number: `ORD-${Date.now()}`,
+      order_number: generateOrderNumber(),
       customer_id: 1,
       plant_id: 1,
       estimated_delivery_at: estimatedDelivery,

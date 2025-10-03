@@ -223,7 +223,6 @@ export const AuthProvider = ({
         if (response.status === 400 || response.status === 401) {
           if (!silent) console.log("[Auth] No valid refresh token available");
         } else {
-          console.warn("[Auth] Refresh failed:", response.status, data?.message || data?.error);
         }
 
         if (token && (response.status === 401 || response.status === 403)) {
@@ -267,7 +266,6 @@ export const AuthProvider = ({
   };
 
   const logout = async () => {
-    console.log("[Auth] Logging out...");
 
     if (refreshTimeoutRef.current) {
       clearInterval(refreshTimeoutRef.current);
@@ -284,7 +282,6 @@ export const AuthProvider = ({
         credentials: "include",
         body: JSON.stringify({}),
       });
-      console.log("[Auth] Logout API call successful");
     } catch (err) {
       console.warn("[Auth] Logout API call failed:", err);
     } finally {
@@ -305,7 +302,6 @@ export const AuthProvider = ({
         // populate user from token / api
         await populateUserFromTokenOrApi(storedToken);
       } else {
-        console.log("[Auth] No stored token found");
       }
 
       if (mounted) {

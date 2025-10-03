@@ -255,7 +255,7 @@ export default function Sidebar({ onNewOrder }) {
         className={`${sidebarWidth} fixed left-0 top-0 h-full bg-white border-r border-gray-100 flex flex-col transition-all duration-300 ease-in-out z-40`}
       >
         {/* Logo / top with toggle */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 relative">
+        <div className="flex items-center justify-between px-4 py-3  relative">
           <div
             className={`transition-all cursor-pointer duration-300 relative ${isCollapsed ? "w-8 h-8" : "w-16 h-16"
               }`}
