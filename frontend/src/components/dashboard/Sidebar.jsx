@@ -8,6 +8,7 @@ import NewOrder from "./NewOrder";
 import NewOrderFullScreen from "./NewOrderFullScreen";
 import ApiService from "../../services/ApiService";
 import PendingPage from "./pendingPage/PendingPage";
+import { Link } from "react-router-dom";
 
 const statusClasses = (status) => {
   switch (status?.toLowerCase()) {
@@ -326,6 +327,12 @@ export default function Sidebar({ onNewOrder }) {
             {!isCollapsed && <span className="font-medium">New Order</span>}
           </button>
         </div>
+        <Link to="/orders/drafts">
+          Drafts
+          {/* Optional: Show draft count */}
+          <span className="badge">3</span>
+        </Link>
+
 
         {/* Orders header */}
         {!isCollapsed && (

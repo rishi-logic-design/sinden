@@ -1,222 +1,304 @@
-import { useState, useEffect, useCallback } from 'react';
+// hooks/useDraftManager.jsx
+import { useState, useEffect, useCallback, useRef } from 'react';
+import ApiService from '../../../services/ApiService';
 
-// Draft Manager Hook - Auto-saves form data with offline support
 export const useDraftManager = (formData, files, signature) => {
     const [draftId, setDraftId] = useState(null);
     const [lastSaved, setLastSaved] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-    // Check if form has minimum data for draft
+    const isMountedRef = useRef(true);
+    const saveTimerRef = useRef(null);
+    const lastSaveDataRef = useRef(null);
+
+    useEffect(() => {
+        return () => {
+            isMountedRef.current = false;
+            if (saveTimerRef.current) {
+                clearTimeout(saveTimerRef.current);
+            }
+        };
+    }, []);
+
+    // Monitor online/offline status
+    useEffect(() => {
+        const handleOnline = () => setIsOnline(true);
+        const handleOffline = () => setIsOnline(false);
+
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
+
+    // Check if form has minimum data to save
     const hasMinimumData = useCallback(() => {
-        return formData.clientName?.trim().length > 0 ||
-            formData.contact?.trim().length > 0 ||
-            formData.serviceType?.length > 0;
+        const cn = formData?.clientName?.trim?.() || '';
+        const ct = formData?.contact?.trim?.() || '';
+        const st = formData?.serviceType || '';
+        return cn.length > 0 || ct.length > 0 || st.length > 0;
     }, [formData]);
 
-    // Save draft to localStorage (offline backup)
-    const saveToLocalStorage = useCallback((data) => {
-        try {
-            const draftData = {
-                formData: data.formData,
-                files: data.files.map(f => ({ name: f.name, size: f.size, type: f.type })),
-                hasSignature: !!data.signature,
-                timestamp: new Date().toISOString(),
-                draftId: data.draftId
-            };
-            localStorage.setItem('order_draft_backup', JSON.stringify(draftData));
-            return true;
-        } catch (error) {
-            console.error('Failed to save draft to localStorage:', error);
-            return false;
-        }
-    }, []);
+    // Build snapshot of current form state
+    const buildSnapshot = useCallback(() => {
+        return {
+            formData,
+            files: (files || []).map(f => ({ name: f.name, size: f.size, type: f.type })),
+            signature: !!signature,
+        };
+    }, [formData, files, signature]);
 
-    // Load draft from localStorage
-    const loadFromLocalStorage = useCallback(() => {
-        try {
-            const saved = localStorage.getItem('order_draft_backup');
-            if (saved) {
-                return JSON.parse(saved);
-            }
-        } catch (error) {
-            console.error('Failed to load draft from localStorage:', error);
-        }
-        return null;
-    }, []);
+    // Check if data has changed since last save
+    const hasDataChanged = useCallback(() => {
+        if (!lastSaveDataRef.current) return true;
 
-    // Auto-save draft
-    const autoSaveDraft = useCallback(async () => {
-        if (!hasMinimumData() || isSaving) return;
+        const current = JSON.stringify(buildSnapshot());
+        const last = JSON.stringify(lastSaveDataRef.current);
+        return current !== last;
+    }, [buildSnapshot]);
+
+    // Auto-save to server
+    const autoSaveToServer = useCallback(async () => {
+        if (!hasMinimumData() || isSaving || !isOnline) return;
+        if (!hasDataChanged()) return;
 
         setIsSaving(true);
         setHasUnsavedChanges(false);
 
-        const draftData = {
-            formData,
-            files,
-            signature,
-            draftId
-        };
-
-        // Always save to localStorage first (offline backup)
-        saveToLocalStorage(draftData);
-
-        // Try to save to backend if online
         try {
-            const response = await fetch('/api/drafts/auto-save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    id: draftId,
-                    data: draftData
-                })
-            });
+            const snapshot = buildSnapshot();
+            const result = await ApiService.autoSaveDraft(draftId, snapshot);
 
-            if (response.ok) {
-                const result = await response.json();
+            if (result?.success && result?.draftId && isMountedRef.current) {
                 setDraftId(result.draftId);
                 setLastSaved(new Date());
+                lastSaveDataRef.current = snapshot;
             }
         } catch (error) {
-            console.log('Offline mode: Draft saved locally');
+            console.warn('Auto-save failed:', error.message);
         } finally {
-            setIsSaving(false);
-        }
-    }, [formData, files, signature, draftId, hasMinimumData, isSaving, saveToLocalStorage]);
-
-    // Delete draft
-    const deleteDraft = useCallback(async () => {
-        localStorage.removeItem('order_draft_backup');
-        if (draftId) {
-            try {
-                await fetch(`/api/drafts/${draftId}`, { method: 'DELETE' });
-            } catch (error) {
-                console.error('Failed to delete draft from server:', error);
+            if (isMountedRef.current) {
+                setIsSaving(false);
             }
         }
-        setDraftId(null);
-        setLastSaved(null);
-    }, [draftId]);
+    }, [draftId, hasMinimumData, isSaving, isOnline, buildSnapshot, hasDataChanged]);
 
-    // Auto-save every 30 seconds
+    // Debounced auto-save (12 seconds after changes)
     useEffect(() => {
-        if (hasMinimumData()) {
-            const timer = setTimeout(() => {
-                autoSaveDraft();
-            }, 30000);
+        if (!hasMinimumData() || !isOnline) return;
 
-            return () => clearTimeout(timer);
+        setHasUnsavedChanges(true);
+
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
         }
-    }, [formData, files, signature, autoSaveDraft, hasMinimumData]);
 
-    // Mark as having unsaved changes
-    useEffect(() => {
-        if (hasMinimumData()) {
-            setHasUnsavedChanges(true);
-        }
-    }, [formData, files, signature, hasMinimumData]);
+        saveTimerRef.current = setTimeout(() => {
+            autoSaveToServer();
+        }, 12000);
 
-    // Save before unload
-    useEffect(() => {
-        const handleBeforeUnload = (e) => {
-            if (hasMinimumData() && hasUnsavedChanges) {
-                autoSaveDraft();
-                e.preventDefault();
-                e.returnValue = '';
+        return () => {
+            if (saveTimerRef.current) {
+                clearTimeout(saveTimerRef.current);
             }
         };
+    }, [formData, files, signature, hasMinimumData, isOnline, autoSaveToServer]);
 
-        window.addEventListener('beforeunload', handleBeforeUnload);
-        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-    }, [hasMinimumData, hasUnsavedChanges, autoSaveDraft]);
+    // Safety net: Save every 40 seconds if unsaved changes
+    useEffect(() => {
+        if (!hasMinimumData() || !isOnline) return;
+
+        const interval = setInterval(() => {
+            if (hasUnsavedChanges && !isSaving) {
+                autoSaveToServer();
+            }
+        }, 40000);
+
+        return () => clearInterval(interval);
+    }, [hasMinimumData, isOnline, hasUnsavedChanges, isSaving, autoSaveToServer]);
+
+    // Manual save (returns draft ID for navigation)
+    const saveDraftManually = useCallback(async () => {
+        if (!hasMinimumData()) {
+            throw new Error('Client name is required to save draft');
+        }
+
+        setIsSaving(true);
+
+        try {
+            const snapshot = buildSnapshot();
+            const result = await ApiService.saveDraft(snapshot);
+
+            if (result?.success && result?.draftId && isMountedRef.current) {
+                setDraftId(result.draftId);
+                setLastSaved(new Date());
+                setHasUnsavedChanges(false);
+                lastSaveDataRef.current = snapshot;
+                return result;
+            }
+
+            throw new Error('Failed to save draft');
+        } finally {
+            if (isMountedRef.current) {
+                setIsSaving(false);
+            }
+        }
+    }, [hasMinimumData, buildSnapshot]);
+
+    // Delete draft
+    const deleteDraft = useCallback(async (idOverride) => {
+        const id = idOverride ?? draftId;
+        if (!id) return;
+
+        try {
+            await ApiService.deleteDraft(id);
+        } catch (error) {
+            console.error('Failed to delete draft:', error);
+        }
+
+        if (isMountedRef.current) {
+            setDraftId(null);
+            setLastSaved(null);
+            setHasUnsavedChanges(false);
+            lastSaveDataRef.current = null;
+        }
+    }, [draftId]);
+
+    // Force immediate save
+    const forceSave = useCallback(() => {
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+        }
+        autoSaveToServer();
+    }, [autoSaveToServer]);
 
     return {
         draftId,
         lastSaved,
         isSaving,
         hasUnsavedChanges,
-        loadFromLocalStorage,
-        autoSaveDraft,
+        isOnline,
+        hasMinimumData: hasMinimumData(),
+        saveDraftManually,
         deleteDraft,
-        hasMinimumData: hasMinimumData()
+        forceSave,
     };
 };
 
 // Draft Status Indicator Component
-export const DraftStatus = ({ lastSaved, isSaving, hasUnsavedChanges }) => {
+export const DraftStatus = ({ lastSaved, isSaving, hasUnsavedChanges, isOnline }) => {
     if (!lastSaved && !isSaving && !hasUnsavedChanges) return null;
 
     return (
-        <div className="fixed bottom-4 right-4 bg-white border border-gray-300 rounded-lg shadow-lg px-4 py-2 flex items-center gap-2">
-            {isSaving && (
+        <div className="fixed bottom-4 right-4 bg-white border border-gray-200 rounded-lg shadow-lg px-4 py-2 flex items-center gap-2 z-50">
+            {!isOnline ? (
                 <>
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                    <span className="text-sm text-gray-600">Saving draft...</span>
+                    <span className="w-2 h-2 rounded-full bg-red-500" />
+                    <span className="text-sm text-gray-600">Offline - Changes saved locally</span>
                 </>
-            )}
-            {!isSaving && lastSaved && (
+            ) : isSaving ? (
                 <>
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                    <span className="text-sm text-gray-600">Saving...</span>
+                </>
+            ) : lastSaved ? (
+                <>
+                    <span className="w-2 h-2 rounded-full bg-green-500" />
                     <span className="text-sm text-gray-600">
                         Saved {new Date(lastSaved).toLocaleTimeString()}
                     </span>
                 </>
-            )}
-            {!isSaving && hasUnsavedChanges && !lastSaved && (
+            ) : hasUnsavedChanges ? (
                 <>
-                    <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                    <span className="w-2 h-2 rounded-full bg-orange-500" />
                     <span className="text-sm text-gray-600">Unsaved changes</span>
                 </>
-            )}
+            ) : null}
         </div>
     );
 };
 
-// Draft Recovery Modal
-export const DraftRecoveryModal = ({ draftData, onRecover, onDiscard }) => {
-    if (!draftData) return null;
+// Draft Recovery Modal Component
+export const DraftRecoveryModal = ({ draft, onRecover, onDiscard }) => {
+    if (!draft) return null;
+
+    const formData = draft.form_data || {};
+    const filesMeta = draft.files_meta || [];
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">
-                    Recover Draft Order?
-                </h2>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-900">Recover Draft?</h2>
+                        <p className="text-sm text-gray-500">
+                            Last saved: {new Date(draft.last_modified).toLocaleString()}
+                        </p>
+                    </div>
+                </div>
+
                 <p className="text-gray-600 mb-4">
-                    We found an unsaved draft from{' '}
-                    {new Date(draftData.timestamp).toLocaleString()}
+                    We found an unsaved draft from your previous session. Would you like to continue where you left off?
                 </p>
+
                 <div className="bg-gray-50 rounded-lg p-4 mb-6">
                     <h3 className="font-medium text-gray-900 mb-2">Draft contains:</h3>
-                    <ul className="text-sm text-gray-600 space-y-1">
-                        {draftData.formData?.clientName && (
-                            <li>• Client: {draftData.formData.clientName}</li>
+                    <ul className="text-sm text-gray-700 space-y-1">
+                        {formData.clientName && (
+                            <li className="flex items-start gap-2">
+                                <span className="text-blue-600 mt-0.5">•</span>
+                                <span>Client: {formData.clientName}</span>
+                            </li>
                         )}
-                        {draftData.formData?.contact && (
-                            <li>• Contact: {draftData.formData.contact}</li>
+                        {formData.contact && (
+                            <li className="flex items-start gap-2">
+                                <span className="text-blue-600 mt-0.5">•</span>
+                                <span>Contact: {formData.contact}</span>
+                            </li>
                         )}
-                        {draftData.formData?.serviceType && (
-                            <li>• Service: {draftData.formData.serviceType}</li>
+                        {formData.serviceType && (
+                            <li className="flex items-start gap-2">
+                                <span className="text-blue-600 mt-0.5">•</span>
+                                <span>Service: {formData.serviceType}</span>
+                            </li>
                         )}
-                        {draftData.files?.length > 0 && (
-                            <li>• Attachments: {draftData.files.length} file(s)</li>
+                        {filesMeta.length > 0 && (
+                            <li className="flex items-start gap-2">
+                                <span className="text-blue-600 mt-0.5">•</span>
+                                <span>Attachments: {filesMeta.length} file(s)</span>
+                            </li>
                         )}
-                        {draftData.hasSignature && <li>• Signature included</li>}
+                        {draft.has_signature && (
+                            <li className="flex items-start gap-2">
+                                <span className="text-blue-600 mt-0.5">•</span>
+                                <span>Signature included</span>
+                            </li>
+                        )}
                     </ul>
                 </div>
-                <div className="flex gap-3">
+
+                <div className="flex flex-col gap-3">
                     <button
-                        onClick={onDiscard}
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                    >
-                        Start Fresh
-                    </button>
-                    <button
-                        onClick={onRecover}
-                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        onClick={() => onRecover(draft)}
+                        className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
                     >
                         Recover Draft
+                    </button>
+                    <button
+                        onClick={onDiscard}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors"
+                    >
+                        Start Fresh
                     </button>
                 </div>
             </div>
@@ -224,10 +306,10 @@ export const DraftRecoveryModal = ({ draftData, onRecover, onDiscard }) => {
     );
 };
 
-// Submit Warning Modal
+// Submit Warning Modal Component
 export const SubmitWarningModal = ({ missingFields, onSaveDraft, onContinue, onCancel }) => {
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
                 <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
@@ -239,37 +321,40 @@ export const SubmitWarningModal = ({ missingFields, onSaveDraft, onContinue, onC
                 </div>
 
                 <p className="text-gray-600 mb-4">
-                    The form is missing required information:
+                    The following required information is missing:
                 </p>
 
                 <div className="bg-orange-50 rounded-lg p-4 mb-6">
                     <ul className="text-sm text-gray-700 space-y-1">
                         {missingFields.map((field, index) => (
-                            <li key={index}>• {field}</li>
+                            <li key={index} className="flex items-start gap-2">
+                                <span className="text-orange-600 mt-0.5">•</span>
+                                <span>{field}</span>
+                            </li>
                         ))}
                     </ul>
                 </div>
 
                 <p className="text-sm text-gray-600 mb-6">
-                    Would you like to save this as a draft and complete it later, or fill in the missing information now?
+                    You can save this as a draft and complete it later, or fill in the missing information now.
                 </p>
 
                 <div className="flex flex-col gap-2">
                     <button
                         onClick={onSaveDraft}
-                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
                     >
                         Save as Draft
                     </button>
                     <button
                         onClick={onContinue}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors"
                     >
                         Fill Missing Information
                     </button>
                     <button
                         onClick={onCancel}
-                        className="w-full px-4 py-2 text-gray-600 hover:text-gray-800"
+                        className="w-full px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
                     >
                         Cancel
                     </button>
@@ -277,11 +362,4 @@ export const SubmitWarningModal = ({ missingFields, onSaveDraft, onContinue, onC
             </div>
         </div>
     );
-};
-
-export default {
-    useDraftManager,
-    DraftStatus,
-    DraftRecoveryModal,
-    SubmitWarningModal
 };

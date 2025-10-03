@@ -120,11 +120,11 @@ export const AuthProvider = ({
       const maybeUser = payload.user
         ? payload.user
         : {
-            id: payload.sub ?? payload.id,
-            fullName: payload.name ?? payload.fullName ?? payload.username,
-            email: payload.email,
-            role: payload.role,
-          };
+          id: payload.sub ?? payload.id,
+          fullName: payload.name ?? payload.fullName ?? payload.username,
+          email: payload.email,
+          role: payload.role,
+        };
       saveUser(maybeUser);
       return maybeUser;
     }
@@ -301,7 +301,6 @@ export const AuthProvider = ({
       const storedToken = localStorage.getItem("token");
 
       if (storedToken) {
-        console.log("[Auth] Found stored token");
         setToken(storedToken);
         // populate user from token / api
         await populateUserFromTokenOrApi(storedToken);
@@ -328,7 +327,6 @@ export const AuthProvider = ({
     }
 
     if (isAuthenticated && isInitialized) {
-      console.log("[Auth] Setting up periodic token refresh");
       refreshTimeoutRef.current = setInterval(() => {
         refreshToken(true);
       }, refreshIntervalMs);

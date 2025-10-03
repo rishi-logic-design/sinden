@@ -9,16 +9,14 @@ import ApiService from "../../services/ApiService";
 import useToast from "../../hooks/UseToast";
 import { validateOrderForm, sanitizeInput } from "../../utils/validation";
 import { useCallback } from "react";
-// Import new draft components
 import {
   useDraftManager,
   DraftStatus,
   DraftRecoveryModal,
   SubmitWarningModal
-} from "./DraftManager";
+} from "./draft/UseDraftManager";
 
 export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDraft = null }) {
-  // Form state
   const [formData, setFormData] = useState({
     clientName: "",
     contact: "",
@@ -29,10 +27,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     observations: "",
   });
 
-  // Pricing data (optional for future integration)
   const [pricingData, setPricingData] = useState(null);
-
-  // UI state
   const [files, setFiles] = useState([]);
   const [signature, setSignature] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -42,14 +37,11 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
   const [currentOrderId, setCurrentOrderId] = useState(null);
   const [pricingKey, setPricingKey] = useState(0);
 
-  // Draft-related state
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [showSubmitWarning, setShowSubmitWarning] = useState(false);
   const [recoveredDraft, setRecoveredDraft] = useState(null);
 
-  // Ref for first input to focus after reset
   const clientNameRef = useRef(null);
-
   const { toasts, showSuccess, showError, removeToast } = useToast();
 
   // Initialize draft manager
@@ -58,13 +50,14 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     lastSaved,
     isSaving,
     hasUnsavedChanges,
-    loadFromLocalStorage,
-    autoSaveDraft,
+    isOnline,
+    hasMinimumData,
+    saveDraftManually,
     deleteDraft,
-    hasMinimumData
+    forceSave,
   } = useDraftManager(formData, files, signature);
 
-  // Set default date to today
+  // Set default date and time
   useEffect(() => {
     const today = new Date();
     const date = today.toISOString().split("T")[0];
@@ -80,28 +73,32 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
 
   // Check for existing draft on mount
   useEffect(() => {
-    if (initialDraft) {
-      // Load from passed draft (from Drafts page)
-      loadDraftData(initialDraft);
-    } else {
-      // Check localStorage for auto-saved draft
-      const localDraft = loadFromLocalStorage();
-      if (localDraft && !recoveredDraft) {
-        setRecoveredDraft(localDraft);
-        setShowRecoveryModal(true);
+    const checkForDraft = async () => {
+      if (initialDraft) {
+        loadDraftData(initialDraft);
+      } else {
+        try {
+          const result = await ApiService.getLatestAutoSave();
+          if (result?.success && result?.draft) {
+            setRecoveredDraft(result.draft);
+            setShowRecoveryModal(true);
+          }
+        } catch (error) {
+          console.error('Failed to check for drafts:', error);
+        }
       }
-    }
+    };
+
+    checkForDraft();
   }, [initialDraft]);
 
   // Load draft data into form
   const loadDraftData = (draft) => {
-    if (draft.formData) {
-      setFormData(draft.formData);
+    if (draft.form_data) {
+      setFormData(draft.form_data);
     }
-    // Note: Files and signature would need special handling
-    // as they can't be restored from localStorage
     setShowRecoveryModal(false);
-    showSuccess("Draft loaded successfully");
+    showSuccess("Draft recovered successfully");
   };
 
   // Handle draft recovery
@@ -111,13 +108,15 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     }
   };
 
-  const handleDiscardDraft = () => {
-    deleteDraft();
+  const handleDiscardDraft = async () => {
+    if (recoveredDraft?.id) {
+      await deleteDraft(recoveredDraft.id);
+    }
     setShowRecoveryModal(false);
     setRecoveredDraft(null);
   };
 
-  // Real-time validation functions
+  // Validation functions
   const validatePhone = (phone) => {
     const phoneRegex = /^\d{10}$/;
     if (!phone) return "Phone number is required";
@@ -152,19 +151,16 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     }
   };
 
-  // Handle pricing data changes
   const handlePricingChange = useCallback((data) => {
     setPricingData(data);
   }, []);
 
-  // Update form data with real-time validation
   const updateFormData = (field, value) => {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
     }));
 
-    // Real-time validation for contact field
     if (field === "contact") {
       const contactError = validateContactField(value);
       setErrors((prev) => ({
@@ -181,7 +177,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     }
   };
 
-  // Get missing fields for warning modal
   const getMissingFields = () => {
     const missing = [];
     if (!formData.clientName.trim()) missing.push("Client name");
@@ -194,7 +189,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     return missing;
   };
 
-  // Validate form
   const validateForm = () => {
     const sanitizedData = {
       ...formData,
@@ -230,8 +224,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     return true;
   };
 
-  // Create order payload
-  const createOrderPayload = (isDraft = false) => {
+  const createOrderPayload = () => {
     const estimatedDelivery =
       formData.dateEstimated && formData.timeEstimated
         ? new Date(
@@ -245,15 +238,14 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
       plant_id: 1,
       estimated_delivery_at: estimatedDelivery,
       total_amount: pricingData?.pricing?.total || 0,
-      status: isDraft ? undefined : "Pending",
-      payment_status: isDraft ? "draft" : "None",
+      status: "Pending",
+      payment_status: "None",
       meta: {
         clientName: sanitizeInput(formData.clientName),
         contact: sanitizeInput(formData.contact),
         serviceType: formData.serviceType,
         serviceDetail: sanitizeInput(formData.serviceDetail),
         observations: sanitizeInput(formData.observations),
-        draft: isDraft,
         fileCount: files.length,
         hasSignature: !!signature,
         createdAt: new Date().toISOString(),
@@ -276,20 +268,15 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     setLoadingMessage("Saving draft...");
 
     try {
-      const payload = createOrderPayload(true);
-      const result = await ApiService.saveDraft(payload);
-
-      setCurrentOrderId(result.id);
+      const result = await saveDraftManually();
       showSuccess("Draft saved successfully");
 
-      // Delete auto-save backup after manual save
-      deleteDraft();
+      // Delete auto-save after manual save
+      if (draftId) {
+        await deleteDraft(draftId);
+      }
 
-      onOrderSaved({
-        mode: "draft",
-        orderId: result.id,
-        orderNumber: payload.order_number,
-      });
+      return result;
     } catch (error) {
       console.error("Save draft error:", error);
       showError(`Failed to save draft: ${error.message}`);
@@ -298,11 +285,10 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     }
   };
 
-  // Submit order with validation check
+  // Submit order with validation
   const handleSubmitOrder = async () => {
     const missingFields = getMissingFields();
 
-    // If form is incomplete, show warning modal
     if (missingFields.length > 0) {
       setShowSubmitWarning(true);
       return;
@@ -311,10 +297,8 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     await submitOrder();
   };
 
-  // Handle submit from warning modal
   const handleSubmitFromWarning = () => {
     setShowSubmitWarning(false);
-    // Just close modal, let user fill missing fields
   };
 
   const handleSaveDraftFromWarning = async () => {
@@ -322,15 +306,19 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     await handleSaveDraft();
   };
 
-  // Actual submit logic
   const submitOrder = async () => {
     if (!validateForm()) return;
+
+    // Force save before submitting if online
+    if (isOnline && hasUnsavedChanges) {
+      forceSave();
+    }
 
     setIsLoading(true);
     setLoadingMessage("Submitting order...");
 
     try {
-      const payload = createOrderPayload(false);
+      const payload = createOrderPayload();
       const result = await ApiService.createOrder(payload);
       const orderId = result.id;
 
@@ -377,11 +365,14 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
       }
 
       showSuccess(
-        `Order ${result.order_number || orderId} created successfully with Pending status!`
+        `Order ${result.order_number || orderId} created successfully!`
       );
 
-      // Delete auto-save draft after successful submission
-      deleteDraft();
+      // Delete draft after successful submission
+      if (draftId) {
+        await deleteDraft(draftId);
+      }
+      await ApiService.deleteAllAutoSaves();
 
       onOrderSaved({
         mode: "submitted",
@@ -405,7 +396,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     }
   };
 
-  // Reset form
   const resetForm = () => {
     setFormData({
       clientName: "",
@@ -431,7 +421,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     setPricingKey(prev => prev + 1);
   };
 
-  // Check if form is valid for submission
   const isFormValid = () => {
     return (
       formData.clientName.trim() &&
@@ -444,7 +433,6 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
     );
   };
 
-  // Check if draft can be saved
   const canSaveDraft = () => {
     return formData.clientName.trim().length > 0;
   };
@@ -455,14 +443,18 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
         <div className="max-w-[1200px] mx-auto">
           {/* Header */}
           <div className="mb-6">
-            <h1 className="text-4xl mb-10 font-bold text-gray-900">New Order</h1>
+            <h1 className="text-4xl mb-4 font-bold text-gray-900">New Order</h1>
+
+            {/* Auto-save indicator */}
             {hasMinimumData && (
               <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
                 <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <span className="text-sm text-blue-700">
-                  Your progress is being auto-saved. You can safely leave and continue later.
+                  {isOnline
+                    ? "Your progress is being auto-saved. You can safely leave and continue later."
+                    : "You're offline. Changes will be saved when you're back online."}
                 </span>
               </div>
             )}
@@ -672,7 +664,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
                     }`}
                 >
                   {isFormValid()
-                    ? "Ready to submit (will be created as Pending)"
+                    ? "Ready to submit"
                     : "Missing required fields"}
                 </span>
               </div>
@@ -684,7 +676,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
             </div>
             {!isFormValid() && (
               <div className="text-xs text-gray-500 mt-2">
-                Required: Client name, Valid contact (10-digit phone/Gmail), Service type, Delivery date & time, At least 1 attachment, Client signature
+                Required: Client name, Valid contact, Service type, Delivery date & time, At least 1 attachment, Client signature
               </div>
             )}
           </div>
@@ -704,7 +696,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
               type="button"
               onClick={handleSubmitOrder}
               disabled={isLoading}
-              className="px-6 py-2 rounded-md bg-black text-white text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-6 py-2 rounded-md bg-black text-white text-sm font-medium hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Submit Order
             </button>
@@ -731,7 +723,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
         {/* Draft Recovery Modal */}
         {showRecoveryModal && recoveredDraft && (
           <DraftRecoveryModal
-            draftData={recoveredDraft}
+            draft={recoveredDraft}
             onRecover={handleRecoverDraft}
             onDiscard={handleDiscardDraft}
           />
@@ -752,6 +744,7 @@ export default function NewOrderFullScreen({ onOrderSaved = () => { }, initialDr
           lastSaved={lastSaved}
           isSaving={isSaving}
           hasUnsavedChanges={hasUnsavedChanges}
+          isOnline={isOnline}
         />
 
         {/* Toast Messages */}

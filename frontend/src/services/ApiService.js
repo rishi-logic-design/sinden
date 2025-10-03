@@ -14,16 +14,12 @@ class ApiService {
       ...options,
     };
 
-    // Remove Content-Type for FormData
     if (options.body instanceof FormData) {
       delete config.headers["Content-Type"];
     }
 
-    // console.log(`Making ${config.method || "GET"} request to:`, url);
-
     try {
       const response = await fetch(url, config);
-      console.log("Response status:", response.status);
 
       if (!response.ok) {
         let errorData;
@@ -39,17 +35,14 @@ class ApiService {
             };
           }
         } catch (parseError) {
-          // console.error("Failed to parse error response:", parseError);
           errorData = { message: `HTTP error! status: ${response.status}` };
         }
 
-        // console.error("API Error Response:", errorData);
         throw new Error(
           errorData.error || errorData.message || "Request failed"
         );
       }
 
-      // Handle empty responses
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
         const text = await response.text();
@@ -61,66 +54,180 @@ class ApiService {
       }
 
       const data = await response.json();
-      // console.log("Success response:", data);
       return data;
     } catch (error) {
-      // console.error("API request failed:", {
-      //   url,
-      //   method: config.method || "GET",
-      //   error: error.message,
-      // });
       throw error;
     }
   }
 
-  // ========== AUTH METHODS ==========
+  // ========== DRAFT METHODS ==========
 
-  async login(credentials) {
-    return this.request("/auth/login", {
-      method: "POST",
-      body: JSON.stringify(credentials),
-      credentials: "include",
+  /**
+   * Auto-save draft (called every 12 seconds)
+   */
+  async autoSaveDraft(draftId, draftData) {
+    return this.request(`/drafts/auto-save`, {
+      method: 'POST',
+      body: JSON.stringify({ id: draftId, data: draftData }),
+      credentials: 'include',
     });
   }
 
-  async register(userData) {
-    return this.request("/auth/register", {
-      method: "POST",
-      body: JSON.stringify(userData),
-      credentials: "include",
+  /**
+   * Manual save draft (when user clicks "Save as Draft")
+   */
+  async saveDraft(draftData) {
+    return this.request(`/drafts/manual-save`, {
+      method: 'POST',
+      body: JSON.stringify({ id: `draft_manual_${Date.now()}`, data: draftData }),
+      credentials: 'include',
     });
   }
 
-  async getProfile(token) {
-    return this.request("/auth/me", {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      credentials: "include",
+
+  /**
+   * Get latest auto-saved draft for recovery
+   */
+  async getLatestAutoSave() {
+    try {
+      const result = await this.request(`/drafts/recent?limit=1`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      return { success: true, draft: result.drafts?.[0] ?? null };
+    } catch (err) {
+      console.error('Failed to fetch latest draft', err);
+      return { success: false, error: err.message };
+    }
+  }
+
+
+
+  /**
+   * Get all drafts (with optional status filter)
+   */
+  async getDrafts(status = null) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/drafts${q}`, {
+      method: 'GET',
+      credentials: 'include',
     });
   }
 
-  async refreshToken(token) {
-    return this.request("/auth/refresh", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      credentials: "include",
+
+
+  /**
+   * Get single draft by ID
+   */
+  async getDraft(draftId) {
+    return this.request(`/drafts/${encodeURIComponent(draftId)}`, {
+      method: 'GET',
+      credentials: 'include',
     });
   }
 
-  async logout(token) {
-    return this.request("/auth/logout", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      credentials: "include",
+
+
+  /**
+   * Delete draft
+   */
+  async deleteDraft(draftId) {
+    return this.request(`/drafts/${encodeURIComponent(draftId)}`, {
+      method: 'DELETE',
+      credentials: 'include',
     });
   }
 
+
+  /**
+   * Update draft
+   */
+  async updateDraft(draftId, draftData) {
+    return this.request(`/drafts/${encodeURIComponent(draftId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(draftData),
+      credentials: 'include',
+    });
+  }
+
+
+  /**
+   * Get draft count
+   */
+  async getDraftCount() {
+    try {
+      return await this.request('/drafts/count', {
+        method: 'GET',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Failed to fetch draft count:', error);
+      return { total: 0, autoSaved: 0, manual: 0 };
+    }
+  }
+
+  /**
+   * Search drafts
+   */
+  async searchDrafts(searchTerm) {
+    return this.request(`/drafts/search?q=${encodeURIComponent(searchTerm)}`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+  }
+
+
+
+  /**
+   * Convert draft to order (load draft data for order creation)
+   */
+  async convertDraftToOrder(draftId) {
+    return this.request(`/drafts/${encodeURIComponent(draftId)}/convert`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+  }
+
+
+  // delete all autosaves
+  async deleteAllAutoSaves() {
+    try {
+      const result = await this.request(`/drafts?auto_saved=true`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (result.success && result.drafts?.length > 0) {
+        const ids = result.drafts.map(d => d.id);
+        return this.request(`/drafts/delete-multiple`, {
+          method: 'POST',
+          body: JSON.stringify({ draftIds: ids }),
+          credentials: 'include',
+        });
+      }
+
+      return { success: true, deleted: 0 };
+    } catch (err) {
+      console.error('Failed to delete auto-saves', err);
+      return { success: false, error: err.message };
+    }
+  }
+
+
+  /**
+   * Cleanup old auto-saved drafts
+   */
+  async cleanupOldDrafts(days = 7) {
+    try {
+      return await this.request(`/drafts/cleanup/auto?days=${encodeURIComponent(days)}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Failed to cleanup drafts:', error);
+      return { success: false };
+    }
+  }
   // ========== ORDER METHODS ==========
 
   async getCustomers() {
@@ -136,40 +243,32 @@ class ApiService {
   }
 
   async createOrder(orderData) {
-    // console.log("ApiService.createOrder called with:", orderData);
-
     let customer_id = Number(orderData.customer_id);
     let plant_id = Number(orderData.plant_id);
 
-    // Auto-fetch first available customer if not provided
     if (!customer_id || isNaN(customer_id)) {
       try {
         const customers = await this.getCustomers();
         if (customers && customers.length > 0) {
           customer_id = customers[0].id;
-          // console.log(`Auto-selected customer_id: ${customer_id}`);
         } else {
-          throw new Error("No customers found in database. Please create a customer first.");
+          throw new Error("No customers found in database.");
         }
       } catch (error) {
-        // console.error("Failed to fetch customers:", error);
-        throw new Error("Failed to get customer. Please ensure at least one customer exists.");
+        throw new Error("Failed to get customer.");
       }
     }
 
-    // Auto-fetch first available plant if not provided
     if (!plant_id || isNaN(plant_id)) {
       try {
         const plants = await this.getPlants();
         if (plants && plants.length > 0) {
           plant_id = plants[0].id;
-          // console.log(`Auto-selected plant_id: ${plant_id}`);
         } else {
-          throw new Error("No plants found in database. Please create a plant first.");
+          throw new Error("No plants found in database.");
         }
       } catch (error) {
-        // console.error("Failed to fetch plants:", error);
-        throw new Error("Failed to get plant. Please ensure at least one plant exists.");
+        throw new Error("Failed to get plant.");
       }
     }
 
@@ -180,31 +279,16 @@ class ApiService {
       estimated_delivery_at:
         orderData.estimated_delivery_at || new Date().toISOString(),
       total_amount: Number(orderData.total_amount) || 0,
+      status: orderData.status || "Pending",
       payment_status: orderData.payment_status || "None",
       meta: orderData.meta || {},
     };
-
-    // console.log("Final payload being sent to server:", payload);
 
     return this.request("/orders", {
       method: "POST",
       body: JSON.stringify(payload),
       credentials: "include",
     });
-  }
-
-  async saveDraft(orderData) {
-    const draftData = {
-      ...orderData,
-      meta: {
-        ...orderData.meta,
-        draft: true,
-      },
-      customer_id: orderData.customer_id ?? 2,
-      plant_id: orderData.plant_id ?? 2,
-    };
-
-    return this.createOrder(draftData);
   }
 
   async uploadAttachment(orderId, file) {
@@ -219,7 +303,6 @@ class ApiService {
   }
 
   async uploadSignature(orderId, signatureDataUrl) {
-    // Convert data URL to blob
     const response = await fetch(signatureDataUrl);
     const blob = await response.blob();
 
@@ -282,7 +365,7 @@ class ApiService {
       credentials: "include",
     });
   }
-  // Fetch attachments list for an order
+
   async getAttachments(orderId) {
     if (!orderId) throw new Error("orderId required");
     return this.request(`/orders/${orderId}/attachments`, {
@@ -290,14 +373,12 @@ class ApiService {
     });
   }
 
-  // Fetch signature by order (controller route: /api/signatures/order/:orderId)
   async getSignatureByOrder(orderId) {
     if (!orderId) throw new Error("orderId required");
     return this.request(`/signatures/order/${orderId}`, {
       credentials: "include",
     });
   }
-
 }
 
 export default new ApiService();
