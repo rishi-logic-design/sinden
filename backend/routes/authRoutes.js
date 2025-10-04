@@ -1,16 +1,15 @@
-
-// routes/authRoutes.js
 const express = require("express");
 const router = express.Router();
-const authCtrl = require("../controllers/authController");
-const authMiddleware = require("../middleware/auth");
+const authController = require("../controllers/authController");
+const { authenticateToken } = require("../middleware/auth");
 
-router.post("/register", authCtrl.register);
+// Public routes
+router.post("/register", authController.register);
+router.post("/login", authController.login);
 
-router.post("/login", authCtrl.login);
-
-router.post("/logout", authCtrl.logout);
-
-router.get("/me", authMiddleware, authCtrl.me);
+// Protected routes (require authentication)
+router.post("/logout", authenticateToken, authController.logout);
+router.get("/me", authenticateToken, authController.getCurrentUser);
+router.post("/change-password", authenticateToken, authController.changePassword);
 
 module.exports = router;

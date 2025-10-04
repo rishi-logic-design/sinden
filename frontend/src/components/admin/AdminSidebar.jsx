@@ -19,6 +19,7 @@ import { useAuth } from "../../context/AuthContext";
 import AdminOrders from "./AdminOrders";
 import ReportsPage from "./ReportsPage";
 import ConfigurationPage from "./ConfigurationPage";
+import { Navigate } from "react-router-dom";
 
 const LogoComponent = ({ className }) => (
   <div
@@ -141,17 +142,12 @@ export default function AdminSidebar({ onNewOrder }) {
     }
   };
 
-  const handleLogout = async () => {
-    setProcessing(true);
-    setError("");
-
+    const handleLogout = async () => {
+    setProcessing(true); setError("");
     try {
       await authLogout();
-      console.log("Logout successful");
-      // Redirect to login page
-      window.location.href = "/login";
+      Navigate("/login", { replace: true });
     } catch (e) {
-      console.error("Logout error:", e);
       setError("Logout failed. Please try again.");
       setProcessing(false);
     }

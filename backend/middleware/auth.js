@@ -1,52 +1,69 @@
 const jwt = require("jsonwebtoken");
-const Database = require("../db/connect");
-const { User } = Database;
 
-const JWT_SECRET =
-  process.env.JWT_SECRET || "your-secret-key-change-in-production";
-
-const authMiddleware = async (req, res, next) => {
+// Middleware to verify JWT token
+const authenticateToken = (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    // Check for token in cookies first, then Authorization header
+    const token = 
+      req.cookies?.access_token || 
+      req.headers.authorization?.split(" ")[1];
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        error: "Access token required",
+    if (!token) {
+      return res.status(401).json({ 
+        error: "Access denied. No token provided." 
       });
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    // Verify token
+    const decoded = jwt.verify(
+      token, 
+      process.env.JWT_SECRET || "your-secret-key"
+    );
 
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-
-      // Verify user still exists
-      const user = await User.findByPk(decoded.id);
-      if (!user) {
-        return res.status(401).json({
-          error: "User not found",
-        });
-      }
-
-      req.user = {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        fullName: user.fullName,
-      };
-
-      next();
-    } catch (jwtError) {
-      return res.status(401).json({
-        error: "Invalid or expired token",
-      });
-    }
+    // Attach user info to request
+    req.user = decoded;
+    req.userId = decoded.id;
+    
+    next();
   } catch (error) {
-    console.error("Auth middleware error:", error);
-    res.status(500).json({
-      error: "Internal server error",
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({ 
+        error: "Token expired. Please login again." 
+      });
+    }
+    
+    if (error.name === "JsonWebTokenError") {
+      return res.status(403).json({ 
+        error: "Invalid token." 
+      });
+    }
+
+    return res.status(500).json({ 
+      error: "Failed to authenticate token." 
     });
   }
 };
 
-module.exports = authMiddleware;
+// Middleware to check user role
+const authorizeRoles = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user || !req.user.role) {
+      return res.status(403).json({ 
+        error: "Access denied. User role not found." 
+      });
+    }
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ 
+        error: `Access denied. Required roles: ${allowedRoles.join(", ")}` 
+      });
+    }
+
+    next();
+  };
+};
+
+module.exports = {
+  authenticateToken,
+  authorizeRoles
+};

@@ -8,6 +8,9 @@ import RoleBasedRoute from "./context/RoleBasedRoute";
 import Admin from "../src/pages/login/Admin";
 import NewOrderFullScreen from "./components/dashboard/NewOrderFullScreen";
 import DraftsPage from "./components/dashboard/draft/DraftPage";
+import ConfigurationPage from "./components/admin/ConfigurationPage";
+import ReportsPage from "./components/admin/ReportsPage";
+import AdminOrders from "./components/admin/AdminOrders";
 
 const App = () => {
   return (
@@ -27,6 +30,9 @@ const App = () => {
         {/* Admin Dashboard */}
         <Route element={<RoleBasedRoute allowedRoles={["Admin"]} />}>
           <Route path="/admin" element={<Admin />} />
+          <Route path="/configuration" element={<ConfigurationPage />} /> 
+          <Route path="/reportsPage" element={<ReportsPage/>} />
+          <Route path="/orders" element={<AdminOrders/>} />
         </Route>
       </Route>
 

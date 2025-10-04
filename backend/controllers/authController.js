@@ -1,119 +1,253 @@
-const jwt = require("jsonwebtoken");
-const bcrypt = require("bcryptjs");
 const Database = require("../db/connect");
 const { User } = Database;
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
-const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
-
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-
-// Helper to sign tokens
-function signToken(payload, expiresIn = JWT_EXPIRES_IN) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn });
-}
-
-// Sanitize simple strings
-const clean = (s = "", max = 256) => String(s).trim().replace(/\s+/g, " ").slice(0, max);
-
-exports.register = async (req, res) => {
+// Change Password endpoint
+exports.changePassword = async (req, res) => {
   try {
-    const fullName = clean(req.body.fullName, 120);
-    const email = clean(req.body.email, 254).toLowerCase();
-    const password = String(req.body.password || "");
-    const role = req.body.role && ["Receptionist", "Operator", "Admin"].includes(req.body.role)
-      ? req.body.role
-      : "Receptionist";
+    const { current_password, new_password } = req.body;
 
-    if (!fullName || !email || !password) {
-      return res.status(400).json({ error: "Full name, email and password are required" });
-    }
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: "Invalid email format" });
-    }
-    if (password.length < 8) {
-      return res.status(400).json({ error: "Password must be at least 8 characters" });
+    // Get user ID from JWT token (assuming you have auth middleware)
+    const userId = req.user?.id || req.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized - Please login again" });
     }
 
-    const existing = await User.findOne({ where: { email } });
-    if (existing) {
-      return res.status(409).json({ error: "Email already exists" });
+    // Validate inputs
+    if (!current_password || !new_password) {
+      return res.status(400).json({ 
+        error: "Current password and new password are required" 
+      });
     }
 
-    const password_hash = await bcrypt.hash(password, 10);
+    // Password strength validation
+    if (new_password.length < 8) {
+      return res.status(400).json({ 
+        error: "New password must be at least 8 characters long" 
+      });
+    }
 
-    const user = await User.create({ fullName, email, role, password_hash });
+    // Additional password strength checks
+    const hasUpper = /[A-Z]/.test(new_password);
+    const hasLower = /[a-z]/.test(new_password);
+    const hasNumber = /[0-9]/.test(new_password);
+    const hasSymbol = /[^A-Za-z0-9]/.test(new_password);
 
-    const token = signToken({ id: user.id, role: user.role });
+    if (!hasUpper || !hasLower || !hasNumber || !hasSymbol) {
+      return res.status(400).json({ 
+        error: "Password must contain uppercase, lowercase, number, and special character" 
+      });
+    }
 
-    res.status(201).json({
-      message: "Registered successfully",
-      token,
-      user: {
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        role: user.role,
-      },
+    // Fetch user with password
+    const user = await User.findByPk(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (!user.password_hash) {
+      return res.status(400).json({ 
+        error: "Cannot change password for OAuth users" 
+      });
+    }
+
+    // Verify current password
+    const isMatch = await bcrypt.compare(current_password, user.password_hash);
+    
+    if (!isMatch) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
+
+    // Check if new password is same as current
+    const isSameAsOld = await bcrypt.compare(new_password, user.password_hash);
+    if (isSameAsOld) {
+      return res.status(400).json({ 
+        error: "New password must be different from current password" 
+      });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+
+    // Update password
+    await user.update({ password_hash: hashedPassword });
+
+    res.json({ 
+      success: true,
+      message: "Password changed successfully" 
     });
-  } catch (err) {
-    console.error("auth.register error:", err);
-    res.status(500).json({ error: "Failed to register user" });
+  } catch (error) {
+    console.error("Change password error:", error);
+    res.status(500).json({ error: "Failed to change password" });
   }
 };
 
+// Get current user (for /auth/me endpoint)
+exports.getCurrentUser = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const user = await User.findByPk(userId, {
+      attributes: { exclude: ["password_hash"] }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({
+      id: user.id,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    });
+  } catch (error) {
+    console.error("Get current user error:", error);
+    res.status(500).json({ error: "Failed to fetch user details" });
+  }
+};
+
+// Logout endpoint
+exports.logout = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.userId;
+
+    // Clear refresh tokens from database if you're using them
+    if (userId && Database.RefreshToken) {
+      await Database.RefreshToken.destroy({ where: { user_id: userId } });
+    }
+
+    // Clear cookies
+    res.clearCookie("access_token", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict"
+    });
+
+    res.clearCookie("refresh_token", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict"
+    });
+
+    res.json({ 
+      success: true,
+      message: "Logged out successfully" 
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ error: "Failed to logout" });
+  }
+};
+
+// Login endpoint (basic implementation)
 exports.login = async (req, res) => {
   try {
-    const email = clean(req.body.email, 254).toLowerCase();
-    const password = String(req.body.password || "");
+    const { email, password } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: "Email and password are required" });
     }
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: "Invalid email format" });
-    }
 
     const user = await User.findOne({ where: { email } });
+
     if (!user || !user.password_hash) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    const ok = await bcrypt.compare(password, user.password_hash);
-    if (!ok) {
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+
+    if (!isMatch) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    const token = signToken({ id: user.id, role: user.role });
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      process.env.JWT_SECRET || "your-secret-key",
+      { expiresIn: "24h" }
+    );
+
+    // Set httpOnly cookie
+    res.cookie("access_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
 
     res.json({
+      success: true,
       message: "Login successful",
-      token,
       user: {
         id: user.id,
         fullName: user.fullName,
         email: user.email,
-        role: user.role,
+        role: user.role
       },
+      token
     });
-  } catch (err) {
-    console.error("auth.login error:", err);
+  } catch (error) {
+    console.error("Login error:", error);
     res.status(500).json({ error: "Failed to login" });
   }
 };
 
-exports.me = async (req, res) => {
+// Register endpoint (basic implementation)
+exports.register = async (req, res) => {
   try {
-    // req.user is populated by auth middleware
-    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-    res.json(req.user);
-  } catch (err) {
-    console.error("auth.me error:", err);
-    res.status(500).json({ error: "Failed to fetch user" });
-  }
-};
+    const { name, email, password } = req.body;
 
-exports.logout = async (_req, res) => {
-  // With stateless JWT, logout is client-side: just drop the token.
-  res.json({ message: "Logged out" });
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+
+    // Check if user exists
+    const existingUser = await User.findOne({ where: { email } });
+    if (existingUser) {
+      return res.status(409).json({ error: "Email already exists" });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create user
+    const user = await User.create({
+      fullName: name,
+      email,
+      password_hash: hashedPassword,
+      role: "Receptionist"
+    });
+
+    // Generate token
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      process.env.JWT_SECRET || "your-secret-key",
+      { expiresIn: "24h" }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Registration successful",
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role
+      },
+      token
+    });
+  } catch (error) {
+    console.error("Register error:", error);
+    res.status(500).json({ error: "Failed to register" });
+  }
 };

@@ -1,9 +1,7 @@
 class ApiService {
   constructor() {
     this.baseURL = "http://localhost:5001/api";
-    this.csrfHeaderName = "X-CSRF-Token";
-    this.csrfToken = null;
-    this.refreshInFlight = null; // Promise used to dedupe concurrent refreshes
+    this.refreshInFlight = null;
     this.retryOnceFlag = Symbol("retryOnce");
     this.defaultTimeoutMs = 20000;
   }
@@ -26,13 +24,11 @@ class ApiService {
   static isValidEmail(email) {
     if (typeof email !== "string") return false;
     if (email.length > 254) return false;
-    // Very strict RFC5322-ish pattern (still not perfect, but decent for client-side)
     const re = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
     return re.test(email.trim());
   }
 
   static isStrongPassword(pwd) {
-    // At least 8 chars, one lowercase, one uppercase, one number, one symbol, no spaces
     if (typeof pwd !== "string") return false;
     if (pwd.length < 8 || pwd.length > 128) return false;
     if (/\s/.test(pwd)) return false;
@@ -55,7 +51,6 @@ class ApiService {
   async requestRaw(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
 
-    // Merge headers safely
     const headers = new Headers(options.headers || {});
     if (!(options.body instanceof FormData) && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
@@ -119,15 +114,14 @@ class ApiService {
     if (!this.refreshInFlight) {
       this.refreshInFlight = (async () => {
         try {
-          // CSRF is often required for refresh as well (depends on backend config)
-          await this.ensureCsrf().catch(() => { });
           await this.requestRaw("/auth/refresh", {
             method: "POST",
             credentials: "include",
-            headers: this.csrfToken ? { [this.csrfHeaderName]: this.csrfToken } : undefined,
           });
+        } catch (err) {
+          // If refresh fails, ignore it (user needs to re-login)
+          console.warn("Token refresh failed:", err.message);
         } finally {
-          // small delay to avoid stampedes
           await new Promise(r => setTimeout(r, 50));
           this.refreshInFlight = null;
         }
@@ -136,7 +130,7 @@ class ApiService {
     return this.refreshInFlight;
   }
 
-  // ====== AUTH API (Login / Register / Logout etc.) ======
+  // ====== AUTH API ======
 
   async register({ name, email, password }) {
     const safeName = ApiService.sanitizeString(name, 120);
@@ -153,7 +147,7 @@ class ApiService {
 
     const res = await this.request("/auth/register", {
       method: "POST",
-      headers: { [this.csrfHeaderName]: csrf },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
@@ -180,7 +174,6 @@ class ApiService {
       body: JSON.stringify(body),
     });
 
-    // Expect cookies to be set (httpOnly) for session/refresh.
     return {
       user: res?.user ?? null,
       token: res?.token ?? null,
@@ -188,14 +181,11 @@ class ApiService {
     };
   }
 
-  
   async logout() {
     const res = await this.request("/auth/logout", {
       method: "POST",
-      headers: { [this.csrfHeaderName]: csrf },
+      headers: { "Content-Type": "application/json" },
     });
-    // Clear local CSRF cache to force re-fetch next time
-    this.csrfToken = null;
     return { success: true, message: res?.message ?? "Logged out" };
   }
 
@@ -203,36 +193,16 @@ class ApiService {
     return this.request("/auth/me", { method: "GET" });
   }
 
-  async resendVerification() {
-    return this.request("/auth/verify/resend", {
-      method: "POST",
-      headers: { [this.csrfHeaderName]: csrf },
-    });
-  }
-
-  async verifyEmail(token) {
-    ApiService.assert(typeof token === "string" && token.trim().length > 10, "Invalid verification token.");
-    return this.request("/auth/verify", {
-      method: "POST",
-      headers: { [this.csrfHeaderName]: csrf },
-      body: JSON.stringify({ token: token.trim() }),
-    });
-  }
-
   async forgotPassword(email) {
     const safeEmail = ApiService.sanitizeString(email, 254);
     ApiService.assert(ApiService.isValidEmail(safeEmail), "Please enter a valid email.");
     return this.request("/auth/forgot-password", {
       method: "POST",
-      headers: { [this.csrfHeaderName]: csrf },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: safeEmail }),
     });
   }
 
-  /**
-   * Reset password
-   * Expected backend: POST /auth/reset-password  { token, password }
-   */
   async resetPassword(token, newPassword) {
     ApiService.assert(typeof token === "string" && token.trim().length > 10, "Invalid reset token.");
     ApiService.assert(ApiService.isStrongPassword(newPassword),
@@ -240,7 +210,7 @@ class ApiService {
     );
     return this.request("/auth/reset-password", {
       method: "POST",
-      headers: { [this.csrfHeaderName]: csrf },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: token.trim(), password: newPassword }),
     });
   }
@@ -252,54 +222,34 @@ class ApiService {
     );
     return this.request("/auth/change-password", {
       method: "POST",
-      headers: { [this.csrfHeaderName]: csrf },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     });
   }
 
-  // ====== Optional 2FA endpoints (if your backend supports) ======
+  async updateUser(userId, data) {
+    if (!userId) throw new Error("userId required");
+    const body = {};
 
-  /**
-   * Begin TOTP setup
-   * Expected backend: POST /auth/2fa/setup -> { otpauth_url, qrcode_data_url }
-   */
-  async beginTwoFactorSetup() {
-    return this.request("/auth/2fa/setup", {
-      method: "POST",
-      headers: { [this.csrfHeaderName]: csrf },
+    if (typeof data.fullName === "string") body.fullName = ApiService.sanitizeString(data.fullName, 120);
+    if (typeof data.email === "string") {
+      const e = ApiService.sanitizeString(data.email, 254);
+      ApiService.assert(ApiService.isValidEmail(e), "Please enter a valid email.");
+      body.email = e;
+    }
+    if (typeof data.role === "string") {
+      body.role = data.role;
+    }
+
+    return this.request(`/users/${encodeURIComponent(userId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
   }
 
-  /**
-   * Verify TOTP and enable 2FA
-   * Expected backend: POST /auth/2fa/verify  { code }
-   */
-  async verifyTwoFactor(code) {
-    ApiService.assert(/^\d{6}$/.test(String(code || "").trim()), "Enter a valid 6‑digit code.");
-    return this.request("/auth/2fa/verify", {
-      method: "POST",
-      headers: { [this.csrfHeaderName]: csrf },
-      body: JSON.stringify({ code: String(code).trim() }),
-    });
-  }
+  // ====== DRAFT / ORDER methods (unchanged) ======
 
-  /**
-   * Disable 2FA
-   * Expected backend: POST /auth/2fa/disable  { code }
-   */
-  async disableTwoFactor(code) {
-    return this.request("/auth/2fa/disable", {
-      method: "POST",
-      headers: { [this.csrfHeaderName]: csrf },
-      body: JSON.stringify(code ? { code: String(code).trim() } : {}),
-    });
-  }
-
-  // ====== Existing DRAFT / ORDER methods remain below (unchanged) ======
-
-  /**
-   * Auto-save draft (called every 12 seconds)
-   */
   async autoSaveDraft(draftId, draftData) {
     return this.request(`/drafts/auto-save`, {
       method: 'POST',
@@ -308,9 +258,6 @@ class ApiService {
     });
   }
 
-  /**
-   * Manual save draft (when user clicks "Save as Draft")
-   */
   async saveDraft(draftData) {
     return this.request(`/drafts/manual-save`, {
       method: 'POST',
@@ -319,10 +266,6 @@ class ApiService {
     });
   }
 
-
-  /**
-   * Get latest auto-saved draft for recovery
-   */
   async getLatestAutoSave() {
     try {
       const result = await this.request(`/drafts/latest-auto`, {
@@ -330,9 +273,7 @@ class ApiService {
         credentials: 'include',
       });
 
-      // backend returns either { success: true, draft: {...} } OR older code might send { drafts: [...] }
       const draft = result?.draft ?? (Array.isArray(result?.drafts) ? result.drafts[0] : null);
-
       return { success: true, draft: draft ?? null };
     } catch (err) {
       console.error('Failed to fetch latest draft', err);
@@ -340,9 +281,6 @@ class ApiService {
     }
   }
 
-  /**
-   * Get all drafts (with optional status filter)
-   */
   async getDrafts(status = null) {
     const q = status ? `?status=${encodeURIComponent(status)}` : '';
     return this.request(`/drafts${q}`, {
@@ -351,11 +289,6 @@ class ApiService {
     });
   }
 
-
-
-  /**
-   * Get single draft by ID
-   */
   async getDraft(draftId) {
     return this.request(`/drafts/${encodeURIComponent(draftId)}`, {
       method: 'GET',
@@ -363,11 +296,6 @@ class ApiService {
     });
   }
 
-
-
-  /**
-   * Delete draft
-   */
   async deleteDraft(draftId) {
     return this.request(`/drafts/${encodeURIComponent(draftId)}`, {
       method: 'DELETE',
@@ -375,10 +303,6 @@ class ApiService {
     });
   }
 
-
-  /**
-   * Update draft
-   */
   async updateDraft(draftId, draftData) {
     return this.request(`/drafts/${encodeURIComponent(draftId)}`, {
       method: 'PUT',
@@ -387,10 +311,6 @@ class ApiService {
     });
   }
 
-
-  /**
-   * Get draft count
-   */
   async getDraftCount() {
     try {
       return await this.request('/drafts/count', {
@@ -403,9 +323,6 @@ class ApiService {
     }
   }
 
-  /**
-   * Search drafts
-   */
   async searchDrafts(searchTerm) {
     return this.request(`/drafts/search?q=${encodeURIComponent(searchTerm)}`, {
       method: 'GET',
@@ -413,9 +330,6 @@ class ApiService {
     });
   }
 
-  /**
-   * Convert draft to order (load draft data for order creation)
-   */
   async convertDraftToOrder(draftId) {
     return this.request(`/drafts/${encodeURIComponent(draftId)}/convert`, {
       method: 'POST',
@@ -423,8 +337,6 @@ class ApiService {
     });
   }
 
-
-  // delete all autosaves
   async deleteAllAutoSaves() {
     try {
       const result = await this.request(`/drafts?auto_saved=true`, {
@@ -448,10 +360,6 @@ class ApiService {
     }
   }
 
-
-  /**
-   * Cleanup old auto-saved drafts
-   */
   async cleanupOldDrafts(days = 7) {
     try {
       return await this.request(`/drafts/cleanup/auto?days=${encodeURIComponent(days)}`, {
@@ -463,6 +371,7 @@ class ApiService {
       return { success: false };
     }
   }
+
   // ========== ORDER METHODS ==========
 
   async getCustomers() {
