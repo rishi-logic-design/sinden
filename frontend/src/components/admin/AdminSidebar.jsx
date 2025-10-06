@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import logoImage from "../../assets/img/dashboard/logo1.png";
 import { useAuth } from "../../context/AuthContext";
-
+import { useNavigate, useLocation } from "react-router-dom";
 import AdminOrders from "./AdminOrders";
 import ReportsPage from "./ReportsPage";
 import ConfigurationPage from "./ConfigurationPage";
@@ -29,7 +29,7 @@ const LogoComponent = ({ className }) => (
   </div>
 );
 
-export default function AdminSidebar({ onNewOrder }) {
+export default function AdminSidebar({ children }) {
   const { user, logout: authLogout, isAuthenticated } = useAuth();
 
   // Use user from AuthContext, fallback to default
@@ -37,6 +37,8 @@ export default function AdminSidebar({ onNewOrder }) {
     name: "John Doe",
     email: "name@company.com"
   };
+const navigate = useNavigate();
+const location = useLocation();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeMenu, setActiveMenu] = useState("orders");
@@ -126,14 +128,11 @@ export default function AdminSidebar({ onNewOrder }) {
     }
   }, [isCollapsed]);
 
-  const handleNewOrder = () => {
-    if (typeof onNewOrder === "function") return onNewOrder();
-    alert("New Order clicked!");
-  };
-
   const handleMenuClick = (menuId) => {
-    setActiveMenu(menuId);
-  };
+  setActiveMenu(menuId);
+  navigate(`/admin/${menuId}`);
+};
+
 
   const toggleSidebar = () => {
     setIsCollapsed(!isCollapsed);
@@ -156,19 +155,13 @@ export default function AdminSidebar({ onNewOrder }) {
   const sidebarWidth = isCollapsed ? "w-16" : "w-80";
   const contentMargin = isCollapsed ? "ml-16" : "ml-80";
 
-  // Decide which page to render
-  const renderContent = () => {
-    switch (activeMenu) {
-      case "orders":
-        return <AdminOrders />;
-      case "reports":
-        return <ReportsPage />;
-      case "configuration":
-        return <ConfigurationPage />;
-      default:
-        return <AdminOrders />;
-    }
-  };
+  const getActiveMenu = () => {
+  if (location.pathname.includes('/orders')) return 'orders';
+  if (location.pathname.includes('/reports')) return 'reports';
+  if (location.pathname.includes('/configuration')) return 'configuration';
+  return 'orders';
+};
+
 
   return (
     <div className="flex h-screen">
@@ -370,16 +363,10 @@ export default function AdminSidebar({ onNewOrder }) {
         </div>
       </aside>
       {/* Content area */}
-      <div
-        className={`${contentMargin} flex-1 h-screen overflow-y-auto transition-all duration-300 ease-in-out bg-gray-50`}
-      >
-        <div className="h-full">
-          <div className="min-h-full">
-            {/* Content rendered here */}
-            {renderContent()}
-          </div>
-        </div>
+      <div className={`${contentMargin} flex-1 h-screen overflow-y-auto transition-all duration-300 ease-in-out bg-gray-50`}>
+  {children} {/* Render children prop instead of renderContent() */}
+</div>
+
       </div>
-    </div>
   );
 }

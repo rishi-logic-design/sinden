@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Search, ChevronLeft, ChevronRight, ChevronDown, Calendar } from "lucide-react";
 import OrderDetailsPage from "./OrderDetailsPage";
 import OrderActions from "./OrderActions";
+import ApiService from "../../services/ApiService"
 
 const STATUSES = [
   "Pending",
@@ -14,40 +15,16 @@ const STATUSES = [
   "Paid",
 ];
 
-const sampleOrders = [
-  {
-    id: "E150291",
-    client: "Juan Pérez",
-    currentStatus: "Draft",
-    registrationDate: "01/09/2025 - 13:32",
-    estimatedDeliveryDate: "02/09/2025",
-    estimatedDeliveryTime: "16:00",
-    notes: "Handle with care.",
-  },
-  {
-    id: "E150292",
-    client: "Industrias Ríos",
-    currentStatus: "Pending",
-    registrationDate: "01/09/2025 10:05",
-    estimatedDeliveryDate: "03/09/2025",
-    estimatedDeliveryTime: "11:00",
-    notes: "Customer will pick up at noon.",
-  },
-  {
-    id: "E150293",
-    client: "Maria González",
-    currentStatus: "In Progress",
-    registrationDate: "02/09/2025 - 09:15",
-    estimatedDeliveryDate: "04/09/2025",
-    estimatedDeliveryTime: "14:30",
-    notes: "Urgent delivery required.",
-  },
-  // ...more sample orders
-];
 
 export default function AdminOrders() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+
+    // API state
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
 
   // filter state
   const [dateRange, setDateRange] = useState("");
@@ -57,19 +34,79 @@ export default function AdminOrders() {
   // pagination
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 24;
-  const totalItems = sampleOrders.length;
+  const totalItems = orders.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const startItem = (currentPage - 1) * pageSize + 1;
   const endItem = Math.min(totalItems, currentPage * pageSize);
 
-  // details - this is the key state for showing order details
   const [selectedOrder, setSelectedOrder] = useState(null);
 
   useEffect(() => {
-    const handleDocClick = () => setShowFilters(false);
+    fetchOrders()
+  }, []);
+
+  useEffect(() => {
+  const handleDocClick = (e) => {
+    // Check if click is outside filters button AND panel
+    const filtersButton = e.target.closest('button[aria-haspopup="true"]');
+    const filtersPanel = e.target.closest('.filters-panel');
+    
+    if (!filtersButton && !filtersPanel) {
+      setShowFilters(false);
+    }
+  };
+  
+  if (showFilters) {
     document.addEventListener("click", handleDocClick);
     return () => document.removeEventListener("click", handleDocClick);
-  }, []);
+  }
+}, [showFilters]);
+
+
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await ApiService.getOrders();
+
+      console.log("Fetched orders:", response);
+    const ordersData = Array.isArray(response) ? response : [];
+
+            // Transform API data to match table format
+const transformedOrders = ordersData.map((order) => ({
+  id: order.order_number,
+client: order.meta?.clientName || order.Customer?.name || "Unknown",
+  currentStatus:order.status,
+registrationDate: new Date(order.createdAt).toLocaleString(
+    "en-GB",{
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }
+  ).replace(",", " -"),
+  estimatedDeliveryDate: order.estimated_delivery_at
+  ? new Date(order.estimated_delivery_at).toLocaleDateString("en-GB") : "N/A",
+  estimatedDeliveryTime: order.estimated_delivery_at
+  ? new Date(order.estimated_delivery_at).toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }) : "N/A",
+    notes: order.meta ?.notes || "N/A",
+    fullData: order, 
+}
+));
+setOrders(transformedOrders);
+    } catch (error) {
+      console.error("Failed to fetch orders:", error);
+      setError(error.message || "An error occurred");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const stopClose = (e) => e.stopPropagation();
 
@@ -85,16 +122,11 @@ export default function AdminOrders() {
   };
 
   const applyFilters = (e) => {
-    if (e) e.stopPropagation();
-    setShowFilters(false);
-    // Implement actual filter logic (API call or client-side) if needed
-    const applied = {
-      dateRange,
-      clientSearch,
-      statuses: Object.keys(selectedStatuses).filter((s) => selectedStatuses[s]),
-    };
-    console.log("Applying filters:", applied);
-  };
+  if (e) e.stopPropagation();
+  setShowFilters(false);
+  setCurrentPage(1); 
+};
+
 
   const goPrev = () => setCurrentPage((p) => Math.max(1, p - 1));
   const goNext = () => setCurrentPage((p) => Math.min(totalPages, p + 1));
@@ -105,15 +137,70 @@ export default function AdminOrders() {
   const handleExportPdf = (order) => console.log("Export PDF", order);
 
   // apply basic search + client filter + status filter client-side for preview
-  const filteredOrders = sampleOrders.filter((o) => {
-    const q = `${o.id} ${o.client}`.toLowerCase();
-    const matchesSearch = q.includes(searchTerm.toLowerCase());
-    const matchesClient = clientSearch ? (`${o.client}`.toLowerCase().includes(clientSearch.toLowerCase())) : true;
-    const statusesSelected = Object.keys(selectedStatuses).filter((s) => selectedStatuses[s]);
-    const matchesStatus = statusesSelected.length ? statusesSelected.includes(o.currentStatus) : true;
-    // dateRange parsing not implemented – left as placeholder
-    return matchesSearch && matchesClient && matchesStatus;
-  });
+  const filteredOrders = orders.filter((o) => {
+  // Search filter
+  const q = `${o.id} ${o.client}`.toLowerCase();
+  const matchesSearch = q.includes(searchTerm.toLowerCase());
+  
+  // Client filter
+  const matchesClient = clientSearch 
+    ? o.client.toLowerCase().includes(clientSearch.toLowerCase()) 
+    : true;
+  
+  // Status filter
+  const statusesSelected = Object.keys(selectedStatuses).filter((s) => selectedStatuses[s]);
+  const matchesStatus = statusesSelected.length 
+    ? statusesSelected.includes(o.currentStatus) 
+    : true;
+  
+  // Date range filter (if dateRange has value)
+  let matchesDate = true;
+  if (dateRange) {
+    // Expecting format: "dd/mm/yyyy - dd/mm/yyyy" or single date
+    const dates = dateRange.split('-').map(d => d.trim());
+    const orderDate = new Date(o.fullData?.createdAt);
+    
+    if (dates.length === 2) {
+      // Range
+      const [startStr, endStr] = dates;
+      if (startStr) {
+        const [d1, m1, y1] = startStr.split('/');
+        const startDate = new Date(y1, m1 - 1, d1);
+        if (orderDate < startDate) matchesDate = false;
+      }
+      if (endStr) {
+        const [d2, m2, y2] = endStr.split('/');
+        const endDate = new Date(y2, m2 - 1, d2, 23, 59, 59);
+        if (orderDate > endDate) matchesDate = false;
+      }
+    } else if (dates.length === 1 && dates[0]) {
+      // Single date - match that day
+      const [d, m, y] = dates[0].split('/');
+      const targetDate = new Date(y, m - 1, d);
+      const targetDateEnd = new Date(y, m - 1, d, 23, 59, 59);
+      if (orderDate < targetDate || orderDate > targetDateEnd) matchesDate = false;
+    }
+  }
+  
+  return matchesSearch && matchesClient && matchesStatus && matchesDate;
+});
+
+
+
+  const getStatusColor = (status) => {
+  const colors = {
+    "Pending": "bg-yellow-100 text-yellow-700 border-yellow-300",
+    "In Progress": "bg-blue-100 text-blue-700 border-blue-300",
+    "Executed": "bg-purple-100 text-purple-700 border-purple-300",
+    "Finalized": "bg-green-100 text-green-700 border-green-300",
+    "Cancelled": "bg-red-100 text-red-700 border-red-300",
+    "Delivered": "bg-emerald-100 text-emerald-700 border-emerald-300",
+    "Payment Pending": "bg-orange-100 text-orange-700 border-orange-300",
+    "Paid": "bg-teal-100 text-teal-700 border-teal-300",
+  };
+  return colors[status] || "bg-gray-100 text-gray-800 border-gray-200";
+};
+
 
   // If an order is selected, show only the order details page
   if (selectedOrder) {
@@ -127,6 +214,24 @@ export default function AdminOrders() {
       />
     );
   }
+
+   if (loading) {
+    return (
+      <div className="w-full min-h-screen flex items-center justify-center">
+        <div className="text-gray-600">Loading orders...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-full min-h-screen flex items-center justify-center">
+        <div className="text-red-600">Error: {error}</div>
+      </div>
+    );
+  }
+
+
 
   // Otherwise show the orders list with search, filters, and table
   return (
@@ -176,13 +281,15 @@ export default function AdminOrders() {
               {/* Filters panel */}
               {showFilters && (
                 <div
-                  onClick={stopClose}
                   className="absolute left-0 mt-2 w-72 bg-white border border-gray-200 rounded-md shadow-lg z-40"
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between px-4 py-3 border-b">
                     <h3 className="text-lg font-semibold text-gray-800">Filters</h3>
-                    <button onClick={clearFilters} className="text-sm text-blue-500 hover:underline">
+                    <button oonClick={(e) => {
+          e.stopPropagation();
+          clearFilters(e);
+        }}  className="text-sm text-blue-500 hover:underline">
                       Clear
                     </button>
                   </div>
@@ -303,7 +410,7 @@ export default function AdminOrders() {
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">{order.id}</td>
                   <td className="px-6 py-4 text-sm text-gray-700">{order.client}</td>
                   <td className="px-6 py-4 text-sm">
-                    <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800 border border-gray-200">
+  <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full border ${getStatusColor(order.currentStatus)}`}>
                       {order.currentStatus}
                     </span>
                   </td>

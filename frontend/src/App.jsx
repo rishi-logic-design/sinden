@@ -29,11 +29,15 @@ const App = () => {
 
         {/* Admin Dashboard */}
         <Route element={<RoleBasedRoute allowedRoles={["Admin"]} />}>
-          <Route path="/admin" element={<Admin />} />
-          <Route path="/configuration" element={<ConfigurationPage />} /> 
-          <Route path="/reportsPage" element={<ReportsPage/>} />
-          <Route path="/orders" element={<AdminOrders/>} />
-        </Route>
+  <Route path="/admin" element={<Admin />}>
+    {/* Nested routes for admin pages */}
+    <Route index element={<Navigate to="/admin/orders" replace />} />
+    <Route path="orders" element={<AdminOrders />} />
+    <Route path="reports" element={<ReportsPage />} />
+    <Route path="configuration" element={<ConfigurationPage />} />
+  </Route>
+</Route>
+
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
