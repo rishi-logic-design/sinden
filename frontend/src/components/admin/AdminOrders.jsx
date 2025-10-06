@@ -45,23 +45,6 @@ export default function AdminOrders() {
     fetchOrders()
   }, []);
 
-  useEffect(() => {
-  const handleDocClick = (e) => {
-    // Check if click is outside filters button AND panel
-    const filtersButton = e.target.closest('button[aria-haspopup="true"]');
-    const filtersPanel = e.target.closest('.filters-panel');
-    
-    if (!filtersButton && !filtersPanel) {
-      setShowFilters(false);
-    }
-  };
-  
-  if (showFilters) {
-    document.addEventListener("click", handleDocClick);
-    return () => document.removeEventListener("click", handleDocClick);
-  }
-}, [showFilters]);
-
 
   const fetchOrders = async () => {
     try {
@@ -286,12 +269,9 @@ setOrders(transformedOrders);
                   {/* Header */}
                   <div className="flex items-center justify-between px-4 py-3 border-b">
                     <h3 className="text-lg font-semibold text-gray-800">Filters</h3>
-                    <button oonClick={(e) => {
-          e.stopPropagation();
-          clearFilters(e);
-        }}  className="text-sm text-blue-500 hover:underline">
-                      Clear
-                    </button>
+                    <button onClick={clearFilters} className="text-sm text-blue-500 hover:underline">
+        Clear
+      </button>
                   </div>
 
                   {/* Content */}
@@ -312,7 +292,7 @@ setOrders(transformedOrders);
 
                     {/* Client */}
                     <div className="group">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Cient</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Client</label>
                       <div className="relative hover:bg-blue-50 rounded-md">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                         <input
