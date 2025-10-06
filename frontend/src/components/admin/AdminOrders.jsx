@@ -312,7 +312,7 @@ setOrders(transformedOrders);
 
                     {/* Client */}
                     <div className="group">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Client</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Cient</label>
                       <div className="relative hover:bg-blue-50 rounded-md">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                         <input
